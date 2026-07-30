@@ -98,7 +98,12 @@ services:
     # Shares the backend bind mount and the api's node_modules volume, so it
     # must run as the same non-root user for the same reason (see api).
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
-    command: sh -c "corepack pnpm install && corepack pnpm start:dev -- --entryFile worker"
+    # `start:worker:dev`, not `start:dev -- --entryFile worker`. The `--` handed
+    # the flag to the compiled app instead of to the nest CLI, so this container
+    # silently booted dist/src/main — a second copy of the API, with no BullMQ
+    # worker at all. Every scheduled job (token reset, analytics aggregation)
+    # therefore had no consumer. The dedicated script removes the ambiguity.
+    command: sh -c "corepack pnpm install && corepack pnpm start:worker:dev"
     volumes:
       - ../../../backend.inkwell.ai:/app
       - api_node_modules:/app/node_modules

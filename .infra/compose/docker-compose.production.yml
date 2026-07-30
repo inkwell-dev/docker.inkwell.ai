@@ -60,7 +60,7 @@ services:
   # ── Background Worker ─────────────────────────────────────────────────────
   worker:
     image: ghcr.io/inkwell-dev/backend.inkwell.ai:${BACKEND_TAG:-latest}
-    command: ["node", "dist/worker"]
+    command: ["node", "dist/src/worker"]
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
