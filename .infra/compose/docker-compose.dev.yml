@@ -134,6 +134,9 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Embeddings only (text-embedding-3-small). Chat and inline editing stay on
+      # Groq; OpenAI is used solely by the RAG pipeline and search.
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
       # baked into the browser bundle at build time and must be a build arg.
@@ -188,6 +191,9 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Embeddings only (text-embedding-3-small). Chat and inline editing stay on
+      # Groq; OpenAI is used solely by the RAG pipeline and search.
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
       # baked into the browser bundle at build time and must be a build arg.
