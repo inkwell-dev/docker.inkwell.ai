@@ -81,6 +81,10 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
+      # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
+      # baked into the browser bundle at build time and must be a build arg.
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - COHERE_API_KEY=${COHERE_API_KEY}
       - RESEND_API_KEY=${RESEND_API_KEY}
     depends_on:
@@ -119,6 +123,10 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
+      # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
+      # baked into the browser bundle at build time and must be a build arg.
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - COHERE_API_KEY=${COHERE_API_KEY}
     depends_on:
       db:

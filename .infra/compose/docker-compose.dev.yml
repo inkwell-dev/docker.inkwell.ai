@@ -134,6 +134,10 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
+      # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
+      # baked into the browser bundle at build time and must be a build arg.
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - COHERE_API_KEY=${COHERE_API_KEY}
       - RESEND_API_KEY=${RESEND_API_KEY}
       - FRONTEND_URL=${FRONTEND_URL:-http://frontend.inkwell.ai}
@@ -184,6 +188,10 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
+      # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
+      # baked into the browser bundle at build time and must be a build arg.
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - COHERE_API_KEY=${COHERE_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
