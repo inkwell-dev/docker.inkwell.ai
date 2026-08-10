@@ -9,7 +9,11 @@ services:
       - "443:443"
     volumes:
       - ../nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Must contain fullchain.pem and privkey.pem, or nginx refuses to start.
       - ../nginx/certs:/etc/nginx/certs:ro
+      # Webroot for certbot's HTTP-01 challenge, so `certbot renew --webroot`
+      # can revalidate without taking the proxy down.
+      - certbot_webroot:/var/www/certbot
     depends_on:
       - web
       - api
@@ -21,7 +25,21 @@ services:
   web:
     image: ghcr.io/inkwell-dev/frontend.inkwell.ai:${FRONTEND_TAG:-latest}
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://api:3001}
+      # Server-side only. The Next.js server runs inside this network, so it
+      # reaches the API directly instead of going back out through nginx.
+      - INTERNAL_API_URL=${INTERNAL_API_URL:-http://api:3000/api}
+      #
+      # NOTE: NEXT_PUBLIC_* is deliberately NOT set here.
+      #
+      # `next build` inlines those values into the JavaScript as string literals;
+      # the browser never reads them from the environment, so setting them at
+      # runtime is a no-op that only looks like configuration. This file used to
+      # carry `NEXT_PUBLIC_API_URL=http://api:3001` — a container-internal host
+      # (unreachable from any browser) on a port the API does not even listen on
+      # (it listens on 3000). It configured nothing and documented a wrong value.
+      #
+      # Set them as build args instead: GitHub repository variables consumed by
+      # .github/workflows/ci.yml in frontend.inkwell.ai.
     depends_on:
       - api
     restart: unless-stopped
@@ -39,13 +57,34 @@ services:
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio}
-      - MINIO_PORT=${MINIO_PORT:-9000}
+      # Was not passed at all, so the strategy fell back to
+      # http://localhost:3000/... and Google sign-in could never complete in
+      # production. Must match an authorized redirect URI in Google Console.
+      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
+      # The public domain, not `minio`. These build the presigned PUT URL the
+      # BROWSER uploads to; a container name is unreachable from outside the
+      # host. Requests land on nginx's /storage/ proxy.
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_PORT=${MINIO_PORT:-443}
+      # Presigned URLs must carry https:// in production, or they come out as
+      # http://host:443/... and nothing answers there.
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-true}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
+      # Neither of these was passed either, so main.ts fell back to the schema
+      # defaults — http://localhost:3000 and http://localhost:3847 — and the CORS
+      # allow-list contained two dev-machine origins and not the real site. Every
+      # cross-origin browser call from production was rejected.
+      - FRONTEND_URL=${FRONTEND_URL}
+      # Empty is the right production value: FRONTEND_URL alone is the allow-list.
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
+      # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
+      # baked into the browser bundle at build time and must be a build arg.
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - COHERE_API_KEY=${COHERE_API_KEY}
       - RESEND_API_KEY=${RESEND_API_KEY}
     depends_on:
@@ -60,17 +99,34 @@ services:
   # ── Background Worker ─────────────────────────────────────────────────────
   worker:
     image: ghcr.io/inkwell-dev/backend.inkwell.ai:${BACKEND_TAG:-latest}
-    command: ["node", "dist/worker"]
+    command: ["node", "dist/src/worker"]
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio}
-      - MINIO_PORT=${MINIO_PORT:-9000}
+      # The worker boots WorkerModule, which runs the same ConfigModule
+      # `validate` as the API. JWT_SECRET / JWT_REFRESH_SECRET are required there
+      # (min 32 chars, no default) and were not passed here at all, so the
+      # production worker exited on startup before processing a single job —
+      # every scheduled aggregation and token reset had no consumer.
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      # Same public-domain reasoning as the api service: the worker shares the
+      # codebase, so it builds its MinIO client the same way.
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_PORT=${MINIO_PORT:-443}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-true}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
+      # Absolute links in generated emails and notifications resolve against this.
+      - FRONTEND_URL=${FRONTEND_URL}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
+      # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
+      # baked into the browser bundle at build time and must be a build arg.
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - COHERE_API_KEY=${COHERE_API_KEY}
     depends_on:
       db:
@@ -138,6 +194,7 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  certbot_webroot:
 
 networks:
   inkwell:

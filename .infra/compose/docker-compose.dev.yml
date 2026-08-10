@@ -4,31 +4,79 @@ services:
   # ── Reverse Proxy ─────────────────────────────────────────────────────────
   nginx:
     image: nginx:1.27-alpine
+    # Published twice, on purpose:
+    #
+    #   127.0.0.2:80   — the named hosts (frontend/backend/storage.inkwell.ai).
+    #                    Port 80 on 127.0.0.1 is taken by ddev-router whenever a
+    #                    ddev project runs; every address in 127.0.0.0/8 is
+    #                    loopback on Linux, so .2 sidesteps it with no conflict.
+    #   127.0.0.1:8080 — the original origin, kept alive because Google OAuth
+    #                    only accepts http:// redirect URIs on `localhost`, and
+    #                    the frontend's `pnpm api:codegen` hardcodes this URL.
     ports:
-      - "${NGINX_HOST_PORT:-8080}:80"
+      - "${NGINX_BIND_IP:-127.0.0.2}:${NGINX_PORT:-80}:80"
+      - "127.0.0.1:${NGINX_HOST_PORT:-8080}:80"
     volumes:
-      - ../nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - web
-      - api
+      # dev.conf, not default.conf — production mounts default.conf, and this
+      # config defers upstream DNS so nginx can boot without the app services.
+      - ../nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+    # No depends_on: web/api sit behind the "apps" profile and are normally not
+    # running when nginx starts. dev.conf resolves them lazily, so a stopped
+    # service is a 502 rather than a proxy that refuses to boot.
     restart: unless-stopped
     networks:
-      - inkwell
+      inkwell:
+        # Makes the three dev hostnames resolve *inside* the compose network as
+        # well, not only via the host's /etc/hosts. Without this the api
+        # container could not presign against storage.inkwell.ai, and any
+        # container-side curl to backend.inkwell.ai would fail DNS.
+        aliases:
+          - frontend.inkwell.ai
+          - backend.inkwell.ai
+          - storage.inkwell.ai
 
   # ── Frontend (hot reload) ─────────────────────────────────────────────────
   web:
     image: node:22.22.3-alpine
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm dev"
+    # Behind a profile so `make dciup-dev` brings up infrastructure only and this
+    # service does NOT auto-start. Run it in its own terminal with `make dci-web`
+    # (or start everything at once with `make dciup-all`).
+    #
+    # Previously it started automatically, which is why shelling in and running
+    # `pnpm dev` by hand reported "Another next dev server is already running".
+    profiles: ["apps"]
+    # See the note on the api service — this container writes .next/ into the
+    # bind-mounted repo, so it must not run as root.
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    # `corepack pnpm` rather than `corepack enable && pnpm`: enable writes
+    # symlinks into /usr/local/bin, which a non-root user cannot do. `corepack
+    # pnpm` runs the version pinned in package.json's packageManager field.
+    command: sh -c "corepack pnpm install && corepack pnpm dev"
     volumes:
       - ../../../frontend.inkwell.ai:/app
       - web_node_modules:/app/node_modules
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost/api}
+      # Browser-facing. Baked into the client bundle, so it must be an address
+      # the *browser* can reach — never a container name.
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://frontend.inkwell.ai/api}
+      - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://frontend.inkwell.ai}
+      # Server-side only: the three generateMetadata() calls in
+      # src/lib/api/server-fetch.ts run inside this container, where the public
+      # hostname is reachable but the direct container name is one hop shorter
+      # and does not depend on nginx being healthy. Previously this was set only
+      # in the frontend repo's .env.local, and when it was missing those fetches
+      # failed *silently* — page titles quietly degraded to raw slugs.
+      - INTERNAL_API_URL=${INTERNAL_API_URL:-http://api:3000/api}
       - NEXT_TELEMETRY_DISABLED=1
       - WATCHPACK_POLLING=true
-    depends_on:
-      - api
+      # Corepack defaults its home to $HOME, which is unwritable once we drop
+      # from root.
+      - COREPACK_HOME=/tmp/corepack
+    # No depends_on: api — the frontend talks to the API over HTTP at request
+    # time, not at boot. Keeping the dependency would make `make dci-web` also
+    # start the API in the background, which is exactly the coupling this split
+    # is meant to remove.
     networks:
       - inkwell
 
@@ -36,28 +84,67 @@ services:
   api:
     image: node:22.22.3-alpine
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm start:dev"
+    # Behind a profile — see the note on `web`. Run with `make dci-api`.
+    profiles: ["apps"]
+    # Run as the host user, not root.
+    #
+    # This container bind-mounts the backend repo and compiles into it, so as
+    # root it created dist/ owned by root:root inside the developer's working
+    # tree. Because tsconfig sets `incremental: true`, that made even
+    # `tsc --noEmit` fail EACCES on the host — it still wants to write
+    # dist/tsconfig.buildinfo — and `pnpm build` / `pnpm test` failed outright.
+    # Deleting the directory only helped until the next container start.
+    #
+    # Override per-machine with DOCKER_UID/DOCKER_GID in .env if your host user
+    # is not 1000:1000 (`id -u` / `id -g`).
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    # `corepack pnpm` rather than `corepack enable && pnpm`: enable writes
+    # symlinks into /usr/local/bin, which a non-root user cannot do.
+    command: sh -c "corepack pnpm install && corepack pnpm start:dev"
     volumes:
       - ../../../backend.inkwell.ai:/app
       - api_node_modules:/app/node_modules
     environment:
       - NODE_ENV=development
+      # Corepack defaults its home to $HOME, unwritable once we drop from root.
+      - COREPACK_HOME=/tmp/corepack
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio}
-      - MINIO_PORT=${MINIO_PORT:-9000}
+      # Was never passed through at all, so the strategy fell back to
+      # http://localhost:3000/... — a port this stack never publishes, which
+      # meant the Google sign-in round trip could not complete.
+      # Must stay on `localhost`: Google rejects http:// redirect URIs for any
+      # other hostname, which is why nginx keeps its 127.0.0.1:8080 publish.
+      - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL:-http://localhost:8080/api/auth/google/callback}
+      # storage.inkwell.ai, not minio:9000. These two values are what the
+      # presigned PUT URL handed to the browser is built from, and no browser can
+      # resolve a container name — uploads failed at the network layer before
+      # this. Port 80 because the request now goes through nginx.
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-storage.inkwell.ai}
+      - MINIO_PORT=${MINIO_PORT:-80}
+      # Plain HTTP locally — nginx terminates nothing here. Production sets this
+      # to true so presigned URLs carry https://.
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
+      # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
+      # baked into the browser bundle at build time and must be a build arg.
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - COHERE_API_KEY=${COHERE_API_KEY}
       - RESEND_API_KEY=${RESEND_API_KEY}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
+      - FRONTEND_URL=${FRONTEND_URL:-http://frontend.inkwell.ai}
+      # Extra allowed origins beyond FRONTEND_URL. The legacy localhost origin
+      # stays on the list so the OAuth callback and Swagger's "Try it out" keep
+      # working from http://localhost:8080.
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8080}
     depends_on:
       db:
         condition: service_healthy
@@ -70,21 +157,46 @@ services:
   worker:
     image: node:22.22.3-alpine
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm start:dev -- --entryFile worker"
+    # Behind a profile — see the note on `web`. Run with `make dci-worker`.
+    profiles: ["apps"]
+    # Shares the backend bind mount and the api's node_modules volume, so it
+    # must run as the same non-root user for the same reason (see api).
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    # `start:worker:dev`, not `start:dev -- --entryFile worker`. The `--` handed
+    # the flag to the compiled app instead of to the nest CLI, so this container
+    # silently booted dist/src/main — a second copy of the API, with no BullMQ
+    # worker at all. Every scheduled job (token reset, analytics aggregation)
+    # therefore had no consumer. The dedicated script removes the ambiguity.
+    command: sh -c "corepack pnpm install && corepack pnpm start:worker:dev"
     volumes:
       - ../../../backend.inkwell.ai:/app
       - api_node_modules:/app/node_modules
     environment:
       - NODE_ENV=development
+      - COREPACK_HOME=/tmp/corepack
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio}
-      - MINIO_PORT=${MINIO_PORT:-9000}
+      # Same values as the api service — the worker shares the codebase, so the
+      # MinIO client is constructed identically.
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-storage.inkwell.ai}
+      - MINIO_PORT=${MINIO_PORT:-80}
+      # Plain HTTP locally — nginx terminates nothing here. Production sets this
+      # to true so presigned URLs carry https://.
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
+      # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
+      # baked into the browser bundle at build time and must be a build arg.
+      - SENTRY_DSN=${SENTRY_DSN:-}
       - COHERE_API_KEY=${COHERE_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL:-http://frontend.inkwell.ai}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8080}
     depends_on:
       db:
         condition: service_healthy
