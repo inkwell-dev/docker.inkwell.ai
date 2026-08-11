@@ -80,6 +80,8 @@ services:
       # Empty is the right production value: FRONTEND_URL alone is the allow-list.
       - CORS_ORIGINS=${CORS_ORIGINS:-}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      # Two roles: LLM fallback, and ALL RAG embeddings
+      # (gemini-embedding-001 @ 1536 dims). Chat and inline editing use Groq.
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
@@ -122,6 +124,8 @@ services:
       # Absolute links in generated emails and notifications resolve against this.
       - FRONTEND_URL=${FRONTEND_URL}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      # Two roles: LLM fallback, and ALL RAG embeddings
+      # (gemini-embedding-001 @ 1536 dims). Chat and inline editing use Groq.
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is

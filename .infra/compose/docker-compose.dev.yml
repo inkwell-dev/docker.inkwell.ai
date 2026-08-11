@@ -133,6 +133,8 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      # Two roles: LLM fallback, and ALL RAG embeddings
+      # (gemini-embedding-001 @ 1536 dims). Chat and inline editing use Groq.
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
@@ -187,6 +189,8 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - MINIO_BUCKET=${MINIO_BUCKET:-inkwell}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      # Two roles: LLM fallback, and ALL RAG embeddings
+      # (gemini-embedding-001 @ 1536 dims). Chat and inline editing use Groq.
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
