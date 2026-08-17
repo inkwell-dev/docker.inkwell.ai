@@ -1,0 +1,104 @@
+name: Deploy
+
+# Deploys the production stack to the VPS.
+#
+# This repo owns the compose file and the nginx config, so it owns the deploy.
+# The two application repos only build and push images to GHCR; when they finish
+# they fire a repository_dispatch at this workflow, which is what makes a push to
+# frontend/backend `main` end up running on the server.
+#
+# Nothing is built here. `web`, `api` and `worker` all pull prebuilt images, so
+# the whole job is: refresh the checkout on the VPS, pull the new tags, restart.
+on:
+  # Fired by frontend.inkwell.ai / backend.inkwell.ai after their image push.
+  repository_dispatch:
+    types: [deploy]
+  # Manual runs, for redeploying without a code change (config edits, rollbacks).
+  workflow_dispatch:
+    inputs:
+      frontend_tag:
+        description: "Frontend image tag (default: latest)"
+        required: false
+        default: latest
+      backend_tag:
+        description: "Backend image tag (default: latest)"
+        required: false
+        default: latest
+
+# One deploy at a time. Two overlapping runs would race on `docker compose up`
+# and could leave containers pinned to different image tags.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  # Where the VPS keeps its clone of this repository. The .env lives here too,
+  # and is never committed — it is created once, by hand, at provisioning time.
+  DEPLOY_DIR: /opt/inkwell/docker.inkwell.ai
+  COMPOSE_FILE: .infra/compose/docker-compose.production.yml
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          # Non-standard SSH ports are common on hardened boxes; falls back to 22.
+          port: ${{ secrets.VPS_PORT || 22 }}
+          # Without this the remote script keeps going after a failed step and
+          # the job reports success on a deploy that never happened.
+          script_stops: true
+          # Tags are passed through so a manual run can pin or roll back. The
+          # `||` picks the dispatch input when present, else `latest`.
+          envs: FRONTEND_TAG,BACKEND_TAG
+          script: |
+            set -euo pipefail
+            cd "${{ env.DEPLOY_DIR }}"
+
+            # Pick up compose/nginx changes committed to this repo.
+            git fetch --prune origin main
+            git reset --hard origin/main
+
+            # GHCR images are private by default, so the daemon needs a login.
+            # A read:packages PAT — NOT the workflow's GITHUB_TOKEN, which is not
+            # valid off the runner.
+            echo "${{ secrets.GHCR_TOKEN }}" \
+              | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+
+            # Pull first, then restart. Doing it in one `up --pull` step means a
+            # registry failure stops the stack instead of leaving it on the old
+            # images, which is the wrong way round for a live site.
+            docker compose -f "${{ env.COMPOSE_FILE }}" pull
+
+            docker compose -f "${{ env.COMPOSE_FILE }}" up -d --remove-orphans
+
+            # Reclaim the superseded image layers. The VPS disk is small and an
+            # untended GHCR pull loop fills it within a few weeks.
+            docker image prune -f
+        env:
+          FRONTEND_TAG: ${{ github.event.inputs.frontend_tag || 'latest' }}
+          BACKEND_TAG: ${{ github.event.inputs.backend_tag || 'latest' }}
+
+      - name: Verify the stack answers
+        # Hits the real hostname over TLS, so this covers nginx, the certificate
+        # and the API in one check — not just "the container started".
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              https://inkwell-ai.me/api/health || true)
+            if [ "$code" = "200" ]; then
+              echo "health check passed"
+              exit 0
+            fi
+            echo "attempt $i: /api/health returned $code, retrying in 6s"
+            sleep 6
+          done
+          echo "::error::the stack did not answer 200 on /api/health after 60s"
+          exit 1
