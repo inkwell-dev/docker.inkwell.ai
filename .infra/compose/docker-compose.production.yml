@@ -46,6 +46,32 @@ services:
     networks:
       - inkwell
 
+  # ── Schema migrations (one-shot) ──────────────────────────────────────────
+  #
+  # Runs to completion and exits; `api` and `worker` are gated on it succeeding.
+  # Same image as the API, different entrypoint.
+  #
+  # It is a separate service rather than a step in the API's bootstrap so there
+  # is exactly one writer applying DDL. It also installs the pgvector extension,
+  # which the generated migration needs but does not create — see the long note
+  # in backend.inkwell.ai/src/database/migrate.ts.
+  #
+  # `restart: "no"` is explicit and load-bearing: the default `unless-stopped`
+  # inherited from the other services would treat a clean exit 0 as a crash and
+  # restart the migration in a loop.
+  migrate:
+    image: ghcr.io/inkwell-dev/backend.inkwell.ai:${BACKEND_TAG:-latest}
+    command: ["node", "dist/src/database/migrate.js"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - inkwell
+
   # ── Backend API ───────────────────────────────────────────────────────────
   api:
     image: ghcr.io/inkwell-dev/backend.inkwell.ai:${BACKEND_TAG:-latest}
@@ -61,9 +87,14 @@ services:
       # http://localhost:3000/... and Google sign-in could never complete in
       # production. Must match an authorized redirect URI in Google Console.
       - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
-      # The public domain, not `minio`. These build the presigned PUT URL the
-      # BROWSER uploads to; a container name is unreachable from outside the
-      # host. Requests land on nginx's /storage/ proxy.
+      # The public storage SUBDOMAIN (storage.inkwell-ai.me), not `minio` and not
+      # the apex. These build the presigned PUT URL the BROWSER uploads to, so a
+      # container name is unreachable from outside the host.
+      #
+      # This comment used to say the requests "land on nginx's /storage/ proxy".
+      # They do not: presigned URLs address objects as /<bucket>/<key> with no
+      # /storage/ prefix, so on the apex they would be swallowed by the Next.js
+      # catch-all. They land on the storage.* vhost, where `/` means MinIO.
       - MINIO_ENDPOINT=${MINIO_ENDPOINT}
       - MINIO_PORT=${MINIO_PORT:-443}
       # Presigned URLs must carry https:// in production, or they come out as
@@ -94,6 +125,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Waits for the one-shot migration to exit 0. A non-zero exit stops the API
+      # from starting at all, which is the point: booting against a half-applied
+      # schema produces runtime errors far from their cause.
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks:
       - inkwell
@@ -137,6 +173,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Same gate as the api service — the worker shares the schema.
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     networks:
       - inkwell
