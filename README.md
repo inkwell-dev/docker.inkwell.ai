@@ -179,10 +179,16 @@ browser executes. They are passed as Docker build args from CI, sourced from
 GitHub repository variables (Settings → Secrets and variables → Variables):
 
 ```
-NEXT_PUBLIC_API_URL=https://inkwell.ai/api
-NEXT_PUBLIC_SITE_URL=https://inkwell.ai
-NEXT_PUBLIC_STORAGE_URL=https://inkwell.ai
+NEXT_PUBLIC_API_URL=https://inkwell-ai.me/api
+NEXT_PUBLIC_SITE_URL=https://inkwell-ai.me
+NEXT_PUBLIC_STORAGE_URL=https://inkwell-ai.me
+NEXT_PUBLIC_SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project>
 ```
+
+All three URL values are the **apex**, including the storage one: images are read
+through nginx's same-origin `/storage/` proxy. Only the *upload* path uses the
+`storage.` subdomain, and that is `MINIO_ENDPOINT` — runtime config, not a build
+arg. See the DNS table below.
 
 Changing one requires **rebuilding the frontend image**, not restarting it.
 
@@ -192,12 +198,14 @@ production block at the bottom of `.env.example`.
 
 ### DNS
 
-Two records are needed, both pointing at the VPS:
+Three A records are needed, all pointing at the VPS. All three must resolve
+*before* certbot runs, because one certificate covers all of them:
 
 | Record | Purpose |
 |---|---|
-| `inkwell.ai` | the app, the API (`/api`) and image reads (`/storage`) |
-| `storage.inkwell.ai` | presigned upload target (`MINIO_ENDPOINT`) |
+| `inkwell-ai.me` | the app, the API (`/api`) and image reads (`/storage`) |
+| `www.inkwell-ai.me` | redirected to the apex; included in the certificate |
+| `storage.inkwell-ai.me` | presigned upload target (`MINIO_ENDPOINT`) |
 
 The upload host is separate because MinIO addresses objects as `/<bucket>/<key>`,
 and on the apex domain that path is claimed by the Next.js catch-all route.
@@ -216,7 +224,7 @@ Issue them with certbot, including every hostname in one certificate:
 
 ```bash
 certbot certonly --webroot -w /var/www/certbot \
-  -d inkwell.ai -d www.inkwell.ai -d storage.inkwell.ai
+  -d inkwell-ai.me -d www.inkwell-ai.me -d storage.inkwell-ai.me
 ```
 
 Then copy (or symlink) the resulting `fullchain.pem` and `privkey.pem` into
