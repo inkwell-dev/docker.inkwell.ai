@@ -37,7 +37,14 @@ services:
 
   # ── Frontend (hot reload) ─────────────────────────────────────────────────
   web:
-    image: node:22.22.3-alpine
+    build:
+      context: ../../src/frontend.inkwell.ai
+      # Relative to the context, hence the ../.. back out of src/<repo>.
+      dockerfile: ../../.infra/dockerfiles/web.dev.dockerfile
+      target: development
+      args:
+        UID: ${DOCKER_UID:-1000}
+        GID: ${DOCKER_GID:-1000}
     working_dir: /app
     # Behind a profile so `make dciup-dev` brings up infrastructure only and this
     # service does NOT auto-start. Run it in its own terminal with `make dci-web`
@@ -49,10 +56,10 @@ services:
     # See the note on the api service — this container writes .next/ into the
     # bind-mounted repo, so it must not run as root.
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
-    # `corepack pnpm` rather than `corepack enable && pnpm`: enable writes
-    # symlinks into /usr/local/bin, which a non-root user cannot do. `corepack
-    # pnpm` runs the version pinned in package.json's packageManager field.
-    command: sh -c "corepack pnpm install && corepack pnpm dev"
+    # Just the dev server. The install is a cached image layer now (see
+    # .infra/dockerfiles/web.dev.dockerfile) instead of running on every start.
+    # Dependency changed? `make dci-dev-build`.
+    command: pnpm dev
     volumes:
       - ../../src/frontend.inkwell.ai:/app
       - web_node_modules:/app/node_modules
@@ -82,7 +89,15 @@ services:
 
   # ── Backend API (hot reload) ──────────────────────────────────────────────
   api:
-    image: node:22.22.3-alpine
+    image: inkwell-api:dev
+    build:
+      context: ../../src/backend.inkwell.ai
+      # Relative to the context, hence the ../.. back out of src/<repo>.
+      dockerfile: ../../.infra/dockerfiles/api.dev.dockerfile
+      target: development
+      args:
+        UID: ${DOCKER_UID:-1000}
+        GID: ${DOCKER_GID:-1000}
     working_dir: /app
     # Behind a profile — see the note on `web`. Run with `make dci-api`.
     profiles: ["apps"]
@@ -98,9 +113,8 @@ services:
     # Override per-machine with DOCKER_UID/DOCKER_GID in .env if your host user
     # is not 1000:1000 (`id -u` / `id -g`).
     user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
-    # `corepack pnpm` rather than `corepack enable && pnpm`: enable writes
-    # symlinks into /usr/local/bin, which a non-root user cannot do.
-    command: sh -c "corepack pnpm install && corepack pnpm start:dev"
+    # Install is a cached image layer now — see .infra/dockerfiles/api.dev.dockerfile.
+    command: pnpm start:dev
     volumes:
       - ../../src/backend.inkwell.ai:/app
       - api_node_modules:/app/node_modules
@@ -157,7 +171,15 @@ services:
 
   # ── Background Worker (hot reload) ────────────────────────────────────────
   worker:
-    image: node:22.22.3-alpine
+    image: inkwell-api:dev
+    build:
+      context: ../../src/backend.inkwell.ai
+      # Relative to the context, hence the ../.. back out of src/<repo>.
+      dockerfile: ../../.infra/dockerfiles/api.dev.dockerfile
+      target: development
+      args:
+        UID: ${DOCKER_UID:-1000}
+        GID: ${DOCKER_GID:-1000}
     working_dir: /app
     # Behind a profile — see the note on `web`. Run with `make dci-worker`.
     profiles: ["apps"]
@@ -169,7 +191,7 @@ services:
     # silently booted dist/src/main — a second copy of the API, with no BullMQ
     # worker at all. Every scheduled job (token reset, analytics aggregation)
     # therefore had no consumer. The dedicated script removes the ambiguity.
-    command: sh -c "corepack pnpm install && corepack pnpm start:worker:dev"
+    command: pnpm start:worker:dev
     volumes:
       - ../../src/backend.inkwell.ai:/app
       - api_node_modules:/app/node_modules

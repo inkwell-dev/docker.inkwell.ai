@@ -17,7 +17,7 @@ DC_DEV_APPS = $(DC_DEV) --profile apps
         dci-dev-build dci-down dci-down-clean dci-logs-dev dci-ps \
         dciup-prod dci-prod-build dci-down-prod dci-down-prod-clean dci-logs-prod \
         dci-api-shell dci-web-shell dci-db-shell dci-reset \
-        check-submodules git-spull
+        check-submodules git-spull dci-dev-rebuild
 
 # Default target: `make` with no arguments prints this list.
 .DEFAULT_GOAL := help
@@ -32,6 +32,7 @@ help:
 	@echo "  make dciup-all     Everything detached (demo / onboarding)"
 	@echo "  make dci-logs-dev  Follow logs of every service, app services included"
 	@echo "  make dci-ps        Status of every service"
+	@echo "  make dci-dev-build Rebuild dev images (after a dependency change)"
 	@echo "  make dci-down      Stop the whole dev stack"
 	@echo ""
 	@echo "  make git-spull     Pull this repo + fast-forward both submodules"
@@ -90,7 +91,18 @@ dci-worker: check-submodules
 dciup-all: check-submodules
 	$(DC_DEV_APPS) up -d
 
-dci-dev-build:
+# Rebuild the dev images. Needed after a dependency change: package.json and the
+# lockfile are baked into a cached layer, so a new dependency is not visible to a
+# running container until the image is rebuilt.
+#
+# Cached, not --no-cache — an ordinary dependency bump reuses every layer up to
+# the install and takes seconds. Use dci-dev-rebuild for the from-scratch case.
+dci-dev-build: check-submodules
+	$(DC_DEV_APPS) build
+
+# From scratch, ignoring every cached layer. For when a build is wedged, not for
+# routine dependency changes.
+dci-dev-rebuild: check-submodules
 	$(DC_DEV_APPS) build --no-cache
 
 dci-down:

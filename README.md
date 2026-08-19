@@ -9,8 +9,8 @@ Everything here is driven by the `Makefile`. Run `make` with no arguments for th
 | Service | Image | Published on host |
 |---------|-------|-------------------|
 | `nginx` | nginx:1.27-alpine | `127.0.0.2:80` + `127.0.0.1:8080` |
-| `web` | node:22 (dev) / ghcr.io/inkwell-dev/frontend.inkwell.ai (prod) | — (behind nginx) |
-| `api` | node:22 (dev) / ghcr.io/inkwell-dev/backend.inkwell.ai (prod) | — (behind nginx) |
+| `web` | `.infra/dockerfiles/web.dev.dockerfile` (dev) / ghcr.io/inkwell-dev/frontend.inkwell.ai (prod) | — (behind nginx) |
+| `api` | `.infra/dockerfiles/api.dev.dockerfile` (dev) / ghcr.io/inkwell-dev/backend.inkwell.ai (prod) | — (behind nginx) |
 | `worker` | same image as `api`, different entrypoint | — |
 | `db` | pgvector/pgvector:pg16 | `5433` |
 | `redis` | redis:7-alpine | `6379` |
@@ -94,7 +94,25 @@ It must stay on `localhost` — Google rejects `http://` redirect URIs for any
 other hostname. That is why nginx keeps its second publish on
 `127.0.0.1:8080` alongside the named hosts.
 
-### 4. Run it — four terminals
+### 4. Build the dev images (first run, and after dependency changes)
+
+```bash
+make dci-dev-build
+```
+
+The `web`, `api` and `worker` services build from `.infra/dockerfiles/`, which
+install dependencies into a **cached image layer**. A container start is then
+just the dev server — a few seconds, not a full `pnpm install`.
+
+The trade-off: `package.json` and the lockfile are baked into that layer, so
+after changing a dependency you must rebuild before the container can see it.
+`make dci-dev-build` is cached and takes seconds; `make dci-dev-rebuild` ignores
+the cache entirely and is only for a wedged build.
+
+These are separate from the `Dockerfile` in each app repo — those build the
+compiled production images used by CI and have no development target.
+
+### 5. Run it — four terminals
 
 Application services do **not** start automatically. They sit behind the `apps`
 compose profile so each one can run in its own terminal, be restarted on its own,
@@ -123,7 +141,7 @@ make dciup-all      # whole stack, detached
 make dci-logs-dev   # follow all logs, app services included
 ```
 
-### 5. URLs
+### 6. URLs
 
 | | |
 |---|---|
@@ -181,6 +199,7 @@ nginx from starting.
 | File | Purpose |
 |------|---------|
 | `.infra/compose/docker-compose.dev.yml` | Local dev: bind mounts, hot reload, `apps` profile |
+| `.infra/dockerfiles/*.dev.dockerfile` | Dev images — dependencies as a cached layer, source via bind mount |
 | `.infra/compose/docker-compose.production.yml` | VPS deployment, images from GHCR |
 | `.infra/nginx/dev.conf` | Dev reverse proxy — three vhosts, lazy upstream DNS |
 | `.infra/nginx/default.conf` | Production reverse proxy — single vhost |
