@@ -6,15 +6,20 @@ Everything here is driven by the `Makefile`. Run `make` with no arguments for th
 
 ## Services
 
+Every datastore publish is bound to `127.0.0.1` deliberately — those ports exist
+for `psql`/`redis-cli`/a GUI client on this machine, and nothing off it needs
+them. A bare `"5433:5432"` would publish on every interface and put the database
+on whatever café or campus network the laptop happens to join.
+
 | Service | Image | Published on host |
 |---------|-------|-------------------|
 | `nginx` | nginx:1.27-alpine | `127.0.0.2:80` + `127.0.0.1:8080` |
 | `web` | `.infra/dockerfiles/web.dev.dockerfile` (dev) / ghcr.io/inkwell-dev/frontend.inkwell.ai (prod) | — (behind nginx) |
 | `api` | `.infra/dockerfiles/api.dev.dockerfile` (dev) / ghcr.io/inkwell-dev/backend.inkwell.ai (prod) | — (behind nginx) |
 | `worker` | same image as `api`, different entrypoint | — |
-| `db` | pgvector/pgvector:pg16 | `5433` |
-| `redis` | redis:7-alpine | `6379` |
-| `minio` | minio/minio | `9000` (S3), `9001` (console) |
+| `db` | pgvector/pgvector:pg16 | `127.0.0.1:5433` |
+| `redis` | redis:7-alpine | `127.0.0.1:6379` |
+| `minio` | minio/minio | `127.0.0.1:9000` (S3), `127.0.0.1:9001` (console) |
 
 ## Prerequisites
 
@@ -72,11 +77,18 @@ Then fill in the secrets. Two settings deserve attention:
 
 ### 2. Hostnames
 
-Add this line to `/etc/hosts` (needs `sudo`):
+```bash
+make setup-hosts     # needs sudo; idempotent, safe to re-run
+```
+
+That appends the following to `/etc/hosts`, which you can also add by hand:
 
 ```
 127.0.0.2  frontend.inkwell.ai backend.inkwell.ai storage.inkwell.ai
 ```
+
+`make dciup-dev` warns if the entry is missing but does not fail — the app is
+still reachable at http://localhost:8080 without it.
 
 `127.0.0.2` rather than `127.0.0.1` so port 80 cannot collide with anything else
 already bound there (ddev-router, a host nginx, Apache). Every address in
@@ -249,6 +261,18 @@ Three A records are needed, all pointing at the VPS. All three must resolve
 
 The upload host is separate because MinIO addresses objects as `/<bucket>/<key>`,
 and on the apex domain that path is claimed by the Next.js catch-all route.
+
+### The MinIO console
+
+Bound to `127.0.0.1:9001` on the VPS, not published publicly: it authenticates
+with `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`, the credentials that grant full
+access to every bucket. Reach it over an SSH tunnel:
+
+```bash
+ssh -L 9001:127.0.0.1:9001 <vps>   # then open http://localhost:9001
+```
+
+The S3 API is not published on the host at all — nginx proxies it.
 
 ### TLS
 

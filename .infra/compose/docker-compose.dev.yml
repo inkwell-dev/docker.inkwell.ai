@@ -240,8 +240,12 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-inkwell}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Loopback only. A bare "5433:5432" publishes on every interface, which puts
+    # the database on whatever network the laptop is joined to. Nothing outside
+    # this machine needs it: the app services reach it over the compose network
+    # by service name, and this publish exists purely for psql/a GUI client.
     ports:
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inkwell} -d ${POSTGRES_DB:-inkwell}"]
       interval: 10s
@@ -257,8 +261,9 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD:-inkwell_redis}
     volumes:
       - redis_data:/data
+    # Loopback only — see the note on db. redis-cli from the host still works.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-inkwell_redis}", "ping"]
       interval: 10s
@@ -277,9 +282,12 @@ services:
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
     volumes:
       - minio_data:/data
+    # Loopback only — see the note on db. Browser access to uploaded objects does
+    # not come through here; it goes through nginx, which proxies /storage/ and
+    # the storage.inkwell.ai vhost over the compose network.
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 30s

@@ -17,7 +17,7 @@ DC_DEV_APPS = $(DC_DEV) --profile apps
         dci-dev-build dci-down dci-down-clean dci-logs-dev dci-ps \
         dciup-prod dci-prod-build dci-down-prod dci-down-prod-clean dci-logs-prod \
         dci-api-shell dci-web-shell dci-db-shell dci-reset \
-        check-submodules git-spull dci-dev-rebuild
+        check-submodules git-spull dci-dev-rebuild check-hosts setup-hosts
 
 # Default target: `make` with no arguments prints this list.
 .DEFAULT_GOAL := help
@@ -34,6 +34,7 @@ help:
 	@echo "  make dci-ps        Status of every service"
 	@echo "  make dci-dev-build Rebuild dev images (after a dependency change)"
 	@echo "  make dci-down      Stop the whole dev stack"
+	@echo "  make setup-hosts   Add the three dev hostnames to /etc/hosts (sudo)"
 	@echo ""
 	@echo "  make git-spull     Pull this repo + fast-forward both submodules"
 	@echo ""
@@ -41,6 +42,34 @@ help:
 	@echo "  http://backend.inkwell.ai    API + /api/docs"
 	@echo "  http://storage.inkwell.ai    MinIO S3 endpoint"
 	@echo "  http://localhost:9001        MinIO console"
+
+# ── Hostnames ───────────────────────────────────────────────────────────────
+# The three dev vhosts must resolve to the nginx publish address before any of
+# them work in a browser. 127.0.0.2 rather than 127.0.0.1 so port 80 cannot
+# collide with anything already bound there (ddev-router, a host nginx, Apache).
+HOSTS_IP    = 127.0.0.2
+HOSTS_NAMES = frontend.inkwell.ai backend.inkwell.ai storage.inkwell.ai
+
+# Warn, do not fail, and never sudo. A missing entry breaks the named hosts but
+# http://localhost:8080 still serves the app, so this is not fatal — and a hard
+# dependency here would make `make dciup-dev` prompt for a password.
+check-hosts:
+	@for n in $(HOSTS_NAMES); do \
+		grep -qE "^[^#]*$(HOSTS_IP)[[:space:]].*\<$$n\>" /etc/hosts || { \
+			echo "WARNING: $$n is not in /etc/hosts — run: make setup-hosts"; \
+			echo "         (http://localhost:8080 works regardless)"; \
+			break; \
+		}; \
+	done
+
+# Appends the entry if absent. Idempotent, and the only target that needs sudo.
+setup-hosts:
+	@if grep -qE "^[^#]*$(HOSTS_IP)[[:space:]].*frontend.inkwell.ai" /etc/hosts; then \
+		echo "/etc/hosts already has $(HOSTS_IP) entry, nothing to do"; \
+	else \
+		echo "$(HOSTS_IP)  $(HOSTS_NAMES)" | sudo tee -a /etc/hosts > /dev/null; \
+		echo "Added: $(HOSTS_IP)  $(HOSTS_NAMES)"; \
+	fi
 
 # ── Submodules ──────────────────────────────────────────────────────────────
 # The app source lives in src/ as git submodules. A clone made without
@@ -68,7 +97,7 @@ git-spull:
 # here — run each one in its own terminal with the targets below so you can
 # restart, attach a debugger to, or read the logs of one without touching the
 # others.
-dciup-dev:
+dciup-dev: check-hosts
 	$(DC_DEV) up -d
 
 # One service, one terminal, logs streaming.
