@@ -222,8 +222,14 @@ services:
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
     volumes:
       - minio_data:/data
+    # Loopback only. This is the MinIO admin console, and it authenticates with
+    # MINIO_ROOT_USER/PASSWORD — the credentials that grant full access to every
+    # bucket. Published on 0.0.0.0 it was an internet-facing root login on the
+    # VPS. Reach it through an SSH tunnel instead:
+    #     ssh -L 9001:127.0.0.1:9001 <vps>
+    # The S3 API itself is NOT published here at all; nginx proxies it.
     ports:
-      - "9001:9001"
+      - "127.0.0.1:9001:9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 30s

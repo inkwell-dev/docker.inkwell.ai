@@ -16,7 +16,8 @@ DC_DEV_APPS = $(DC_DEV) --profile apps
         dciup-dev dciup-all dci-api dci-web dci-worker \
         dci-dev-build dci-down dci-down-clean dci-logs-dev dci-ps \
         dciup-prod dci-prod-build dci-down-prod dci-down-prod-clean dci-logs-prod \
-        dci-api-shell dci-web-shell dci-db-shell dci-reset
+        dci-api-shell dci-web-shell dci-db-shell dci-reset \
+        check-submodules git-spull dci-dev-rebuild check-hosts setup-hosts
 
 # Default target: `make` with no arguments prints this list.
 .DEFAULT_GOAL := help
@@ -31,19 +32,72 @@ help:
 	@echo "  make dciup-all     Everything detached (demo / onboarding)"
 	@echo "  make dci-logs-dev  Follow logs of every service, app services included"
 	@echo "  make dci-ps        Status of every service"
+	@echo "  make dci-dev-build Rebuild dev images (after a dependency change)"
 	@echo "  make dci-down      Stop the whole dev stack"
+	@echo "  make setup-hosts   Add the three dev hostnames to /etc/hosts (sudo)"
+	@echo ""
+	@echo "  make git-spull     Pull this repo + fast-forward both submodules"
 	@echo ""
 	@echo "  http://frontend.inkwell.ai   app      (also http://localhost:8080)"
 	@echo "  http://backend.inkwell.ai    API + /api/docs"
 	@echo "  http://storage.inkwell.ai    MinIO S3 endpoint"
 	@echo "  http://localhost:9001        MinIO console"
 
+# ── Hostnames ───────────────────────────────────────────────────────────────
+# The three dev vhosts must resolve to the nginx publish address before any of
+# them work in a browser. 127.0.0.2 rather than 127.0.0.1 so port 80 cannot
+# collide with anything already bound there (ddev-router, a host nginx, Apache).
+HOSTS_IP    = 127.0.0.2
+HOSTS_NAMES = frontend.inkwell.ai backend.inkwell.ai storage.inkwell.ai
+
+# Warn, do not fail, and never sudo. A missing entry breaks the named hosts but
+# http://localhost:8080 still serves the app, so this is not fatal — and a hard
+# dependency here would make `make dciup-dev` prompt for a password.
+check-hosts:
+	@for n in $(HOSTS_NAMES); do \
+		grep -qE "^[^#]*$(HOSTS_IP)[[:space:]].*\<$$n\>" /etc/hosts || { \
+			echo "WARNING: $$n is not in /etc/hosts — run: make setup-hosts"; \
+			echo "         (http://localhost:8080 works regardless)"; \
+			break; \
+		}; \
+	done
+
+# Appends the entry if absent. Idempotent, and the only target that needs sudo.
+setup-hosts:
+	@if grep -qE "^[^#]*$(HOSTS_IP)[[:space:]].*frontend.inkwell.ai" /etc/hosts; then \
+		echo "/etc/hosts already has $(HOSTS_IP) entry, nothing to do"; \
+	else \
+		echo "$(HOSTS_IP)  $(HOSTS_NAMES)" | sudo tee -a /etc/hosts > /dev/null; \
+		echo "Added: $(HOSTS_IP)  $(HOSTS_NAMES)"; \
+	fi
+
+# ── Submodules ──────────────────────────────────────────────────────────────
+# The app source lives in src/ as git submodules. A clone made without
+# --recurse-submodules leaves those directories EMPTY, and Docker happily
+# bind-mounts an empty dir — the container then dies on a missing package.json
+# with no hint as to why. Fail loudly here instead.
+check-submodules:
+	@for d in frontend.inkwell.ai backend.inkwell.ai; do \
+		test -f src/$$d/package.json || { \
+			echo "ERROR: src/$$d is empty — run: git submodule update --init --recursive"; \
+			exit 1; \
+		}; \
+	done
+
+# Pull this repo, then fast-forward each submodule to the branch declared in
+# .gitmodules (main for both). Committing the resulting pointer bump is a
+# separate, deliberate step — that commit is what pins the deployable revision.
+git-spull:
+	git pull origin $$(git rev-parse --abbrev-ref HEAD)
+	git submodule sync --recursive
+	git submodule update --init --remote --recursive
+
 # ── Dev ─────────────────────────────────────────────────────────────────────
 # Infrastructure only: nginx, db, redis, minio. The app services are NOT started
 # here — run each one in its own terminal with the targets below so you can
 # restart, attach a debugger to, or read the logs of one without touching the
 # others.
-dciup-dev:
+dciup-dev: check-hosts
 	$(DC_DEV) up -d
 
 # One service, one terminal, logs streaming.
@@ -52,21 +106,32 @@ dciup-dev:
 # X's output; Ctrl+C then stops just this service and leaves the rest of the
 # stack running. --menu=false suppresses compose's interactive shortcut bar,
 # which otherwise sits on top of the logs.
-dci-api:
+dci-api: check-submodules
 	$(DC_DEV) up --attach api --menu=false api
 
-dci-web:
+dci-web: check-submodules
 	$(DC_DEV) up --attach web --menu=false web
 
-dci-worker:
+dci-worker: check-submodules
 	$(DC_DEV) up --attach worker --menu=false worker
 
 # The old `dciup-dev` behaviour: the entire stack detached in one command. Handy
 # for a demo or a first-run smoke test, where per-service control does not matter.
-dciup-all:
+dciup-all: check-submodules
 	$(DC_DEV_APPS) up -d
 
-dci-dev-build:
+# Rebuild the dev images. Needed after a dependency change: package.json and the
+# lockfile are baked into a cached layer, so a new dependency is not visible to a
+# running container until the image is rebuilt.
+#
+# Cached, not --no-cache — an ordinary dependency bump reuses every layer up to
+# the install and takes seconds. Use dci-dev-rebuild for the from-scratch case.
+dci-dev-build: check-submodules
+	$(DC_DEV_APPS) build
+
+# From scratch, ignoring every cached layer. For when a build is wedged, not for
+# routine dependency changes.
+dci-dev-rebuild: check-submodules
 	$(DC_DEV_APPS) build --no-cache
 
 dci-down:

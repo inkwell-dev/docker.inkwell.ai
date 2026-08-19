@@ -1,0 +1,8 @@
+[submodule "src/frontend.inkwell.ai"]
+	path = src/frontend.inkwell.ai
+	url = git@github.com:inkwell-dev/frontend.inkwell.ai.git
+	branch = main
+[submodule "src/backend.inkwell.ai"]
+	path = src/backend.inkwell.ai
+	url = git@github.com:inkwell-dev/backend.inkwell.ai.git
+	branch = main

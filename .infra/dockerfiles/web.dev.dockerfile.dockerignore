@@ -1,0 +1,12 @@
+# The build context is an app repo under src/. Only the manifests are COPYed,
+# but everything not excluded here still gets tarred and sent to the daemon —
+# .next/ and dist/ are written into the bind-mounted repo at runtime and would
+# otherwise be uploaded on every build.
+node_modules
+.next
+dist
+.git
+coverage
+playwright-report
+test-results
+*.log

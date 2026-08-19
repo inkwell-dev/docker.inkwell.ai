@@ -6,29 +6,55 @@ Everything here is driven by the `Makefile`. Run `make` with no arguments for th
 
 ## Services
 
+Every datastore publish is bound to `127.0.0.1` deliberately — those ports exist
+for `psql`/`redis-cli`/a GUI client on this machine, and nothing off it needs
+them. A bare `"5433:5432"` would publish on every interface and put the database
+on whatever café or campus network the laptop happens to join.
+
 | Service | Image | Published on host |
 |---------|-------|-------------------|
 | `nginx` | nginx:1.27-alpine | `127.0.0.2:80` + `127.0.0.1:8080` |
-| `web` | node:22 (dev) / ghcr.io/inkwell-dev/frontend.inkwell.ai (prod) | — (behind nginx) |
-| `api` | node:22 (dev) / ghcr.io/inkwell-dev/backend.inkwell.ai (prod) | — (behind nginx) |
+| `web` | `.infra/dockerfiles/web.dev.dockerfile` (dev) / ghcr.io/inkwell-dev/frontend.inkwell.ai (prod) | — (behind nginx) |
+| `api` | `.infra/dockerfiles/api.dev.dockerfile` (dev) / ghcr.io/inkwell-dev/backend.inkwell.ai (prod) | — (behind nginx) |
 | `worker` | same image as `api`, different entrypoint | — |
-| `db` | pgvector/pgvector:pg16 | `5433` |
-| `redis` | redis:7-alpine | `6379` |
-| `minio` | minio/minio | `9000` (S3), `9001` (console) |
+| `db` | pgvector/pgvector:pg16 | `127.0.0.1:5433` |
+| `redis` | redis:7-alpine | `127.0.0.1:6379` |
+| `minio` | minio/minio | `127.0.0.1:9000` (S3), `127.0.0.1:9001` (console) |
 
 ## Prerequisites
 
-**All five repos must be siblings in the same parent directory.** The dev compose
-file bind-mounts `../../../frontend.inkwell.ai` and `../../../backend.inkwell.ai`;
-a different layout fails at startup.
+**The app repos are git submodules under `src/`.** The dev compose file
+bind-mounts `../../src/frontend.inkwell.ai` and `../../src/backend.inkwell.ai`,
+so nothing outside this repository is required — clone it recursively and the
+layout is correct by construction.
 
 ```
-inkwell.ai/
-├── docker.inkwell.ai/     ← you are here
-├── frontend.inkwell.ai/
-├── backend.inkwell.ai/
-├── mobile.inkwell.ai/
-└── spec.inkwell.ai/
+docker.inkwell.ai/         ← you are here
+├── .infra/                infra config (compose, nginx)
+└── src/
+    ├── frontend.inkwell.ai/   submodule → Next.js app
+    └── backend.inkwell.ai/    submodule → NestJS API + worker
+```
+
+Fresh clone:
+
+```bash
+git clone --recurse-submodules git@github.com:inkwell-dev/docker.inkwell.ai.git
+```
+
+Already cloned without `--recurse-submodules`? The `src/` directories will be
+empty and every app container exits immediately on start:
+
+```bash
+git submodule update --init --recursive
+```
+
+Both submodules track `main` (declared in `.gitmodules`). A submodule pins an
+exact **commit**, not a branch tip — so after pulling new work in a submodule,
+commit the updated pointer here too, or the next clone gets the older revision.
+
+```bash
+make git-spull    # pull this repo + fast-forward both submodules to origin/main
 ```
 
 ## Local Development
@@ -51,11 +77,18 @@ Then fill in the secrets. Two settings deserve attention:
 
 ### 2. Hostnames
 
-Add this line to `/etc/hosts` (needs `sudo`):
+```bash
+make setup-hosts     # needs sudo; idempotent, safe to re-run
+```
+
+That appends the following to `/etc/hosts`, which you can also add by hand:
 
 ```
 127.0.0.2  frontend.inkwell.ai backend.inkwell.ai storage.inkwell.ai
 ```
+
+`make dciup-dev` warns if the entry is missing but does not fail — the app is
+still reachable at http://localhost:8080 without it.
 
 `127.0.0.2` rather than `127.0.0.1` so port 80 cannot collide with anything else
 already bound there (ddev-router, a host nginx, Apache). Every address in
@@ -73,7 +106,25 @@ It must stay on `localhost` — Google rejects `http://` redirect URIs for any
 other hostname. That is why nginx keeps its second publish on
 `127.0.0.1:8080` alongside the named hosts.
 
-### 4. Run it — four terminals
+### 4. Build the dev images (first run, and after dependency changes)
+
+```bash
+make dci-dev-build
+```
+
+The `web`, `api` and `worker` services build from `.infra/dockerfiles/`, which
+install dependencies into a **cached image layer**. A container start is then
+just the dev server — a few seconds, not a full `pnpm install`.
+
+The trade-off: `package.json` and the lockfile are baked into that layer, so
+after changing a dependency you must rebuild before the container can see it.
+`make dci-dev-build` is cached and takes seconds; `make dci-dev-rebuild` ignores
+the cache entirely and is only for a wedged build.
+
+These are separate from the `Dockerfile` in each app repo — those build the
+compiled production images used by CI and have no development target.
+
+### 5. Run it — four terminals
 
 Application services do **not** start automatically. They sit behind the `apps`
 compose profile so each one can run in its own terminal, be restarted on its own,
@@ -102,7 +153,7 @@ make dciup-all      # whole stack, detached
 make dci-logs-dev   # follow all logs, app services included
 ```
 
-### 5. URLs
+### 6. URLs
 
 | | |
 |---|---|
@@ -160,6 +211,7 @@ nginx from starting.
 | File | Purpose |
 |------|---------|
 | `.infra/compose/docker-compose.dev.yml` | Local dev: bind mounts, hot reload, `apps` profile |
+| `.infra/dockerfiles/*.dev.dockerfile` | Dev images — dependencies as a cached layer, source via bind mount |
 | `.infra/compose/docker-compose.production.yml` | VPS deployment, images from GHCR |
 | `.infra/nginx/dev.conf` | Dev reverse proxy — three vhosts, lazy upstream DNS |
 | `.infra/nginx/default.conf` | Production reverse proxy — single vhost |
@@ -209,6 +261,18 @@ Three A records are needed, all pointing at the VPS. All three must resolve
 
 The upload host is separate because MinIO addresses objects as `/<bucket>/<key>`,
 and on the apex domain that path is claimed by the Next.js catch-all route.
+
+### The MinIO console
+
+Bound to `127.0.0.1:9001` on the VPS, not published publicly: it authenticates
+with `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`, the credentials that grant full
+access to every bucket. Reach it over an SSH tunnel:
+
+```bash
+ssh -L 9001:127.0.0.1:9001 <vps>   # then open http://localhost:9001
+```
+
+The S3 API is not published on the host at all — nginx proxies it.
 
 ### TLS
 
