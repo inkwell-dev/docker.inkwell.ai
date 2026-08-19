@@ -54,7 +54,7 @@ services:
     # pnpm` runs the version pinned in package.json's packageManager field.
     command: sh -c "corepack pnpm install && corepack pnpm dev"
     volumes:
-      - ../../../frontend.inkwell.ai:/app
+      - ../../src/frontend.inkwell.ai:/app
       - web_node_modules:/app/node_modules
     environment:
       # Browser-facing. Baked into the client bundle, so it must be an address
@@ -102,7 +102,7 @@ services:
     # symlinks into /usr/local/bin, which a non-root user cannot do.
     command: sh -c "corepack pnpm install && corepack pnpm start:dev"
     volumes:
-      - ../../../backend.inkwell.ai:/app
+      - ../../src/backend.inkwell.ai:/app
       - api_node_modules:/app/node_modules
     environment:
       - NODE_ENV=development
@@ -171,7 +171,7 @@ services:
     # therefore had no consumer. The dedicated script removes the ambiguity.
     command: sh -c "corepack pnpm install && corepack pnpm start:worker:dev"
     volumes:
-      - ../../../backend.inkwell.ai:/app
+      - ../../src/backend.inkwell.ai:/app
       - api_node_modules:/app/node_modules
     environment:
       - NODE_ENV=development

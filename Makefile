@@ -16,7 +16,8 @@ DC_DEV_APPS = $(DC_DEV) --profile apps
         dciup-dev dciup-all dci-api dci-web dci-worker \
         dci-dev-build dci-down dci-down-clean dci-logs-dev dci-ps \
         dciup-prod dci-prod-build dci-down-prod dci-down-prod-clean dci-logs-prod \
-        dci-api-shell dci-web-shell dci-db-shell dci-reset
+        dci-api-shell dci-web-shell dci-db-shell dci-reset \
+        check-submodules git-spull
 
 # Default target: `make` with no arguments prints this list.
 .DEFAULT_GOAL := help
@@ -33,10 +34,33 @@ help:
 	@echo "  make dci-ps        Status of every service"
 	@echo "  make dci-down      Stop the whole dev stack"
 	@echo ""
+	@echo "  make git-spull     Pull this repo + fast-forward both submodules"
+	@echo ""
 	@echo "  http://frontend.inkwell.ai   app      (also http://localhost:8080)"
 	@echo "  http://backend.inkwell.ai    API + /api/docs"
 	@echo "  http://storage.inkwell.ai    MinIO S3 endpoint"
 	@echo "  http://localhost:9001        MinIO console"
+
+# ── Submodules ──────────────────────────────────────────────────────────────
+# The app source lives in src/ as git submodules. A clone made without
+# --recurse-submodules leaves those directories EMPTY, and Docker happily
+# bind-mounts an empty dir — the container then dies on a missing package.json
+# with no hint as to why. Fail loudly here instead.
+check-submodules:
+	@for d in frontend.inkwell.ai backend.inkwell.ai; do \
+		test -f src/$$d/package.json || { \
+			echo "ERROR: src/$$d is empty — run: git submodule update --init --recursive"; \
+			exit 1; \
+		}; \
+	done
+
+# Pull this repo, then fast-forward each submodule to the branch declared in
+# .gitmodules (main for both). Committing the resulting pointer bump is a
+# separate, deliberate step — that commit is what pins the deployable revision.
+git-spull:
+	git pull origin $$(git rev-parse --abbrev-ref HEAD)
+	git submodule sync --recursive
+	git submodule update --init --remote --recursive
 
 # ── Dev ─────────────────────────────────────────────────────────────────────
 # Infrastructure only: nginx, db, redis, minio. The app services are NOT started
@@ -52,18 +76,18 @@ dciup-dev:
 # X's output; Ctrl+C then stops just this service and leaves the rest of the
 # stack running. --menu=false suppresses compose's interactive shortcut bar,
 # which otherwise sits on top of the logs.
-dci-api:
+dci-api: check-submodules
 	$(DC_DEV) up --attach api --menu=false api
 
-dci-web:
+dci-web: check-submodules
 	$(DC_DEV) up --attach web --menu=false web
 
-dci-worker:
+dci-worker: check-submodules
 	$(DC_DEV) up --attach worker --menu=false worker
 
 # The old `dciup-dev` behaviour: the entire stack detached in one command. Handy
 # for a demo or a first-run smoke test, where per-service control does not matter.
-dciup-all:
+dciup-all: check-submodules
 	$(DC_DEV_APPS) up -d
 
 dci-dev-build:

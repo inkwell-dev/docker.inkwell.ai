@@ -18,17 +18,38 @@ Everything here is driven by the `Makefile`. Run `make` with no arguments for th
 
 ## Prerequisites
 
-**All five repos must be siblings in the same parent directory.** The dev compose
-file bind-mounts `../../../frontend.inkwell.ai` and `../../../backend.inkwell.ai`;
-a different layout fails at startup.
+**The app repos are git submodules under `src/`.** The dev compose file
+bind-mounts `../../src/frontend.inkwell.ai` and `../../src/backend.inkwell.ai`,
+so nothing outside this repository is required — clone it recursively and the
+layout is correct by construction.
 
 ```
-inkwell.ai/
-├── docker.inkwell.ai/     ← you are here
-├── frontend.inkwell.ai/
-├── backend.inkwell.ai/
-├── mobile.inkwell.ai/
-└── spec.inkwell.ai/
+docker.inkwell.ai/         ← you are here
+├── .infra/                infra config (compose, nginx)
+└── src/
+    ├── frontend.inkwell.ai/   submodule → Next.js app
+    └── backend.inkwell.ai/    submodule → NestJS API + worker
+```
+
+Fresh clone:
+
+```bash
+git clone --recurse-submodules git@github.com:inkwell-dev/docker.inkwell.ai.git
+```
+
+Already cloned without `--recurse-submodules`? The `src/` directories will be
+empty and every app container exits immediately on start:
+
+```bash
+git submodule update --init --recursive
+```
+
+Both submodules track `main` (declared in `.gitmodules`). A submodule pins an
+exact **commit**, not a branch tip — so after pulling new work in a submodule,
+commit the updated pointer here too, or the next clone gets the older revision.
+
+```bash
+make git-spull    # pull this repo + fast-forward both submodules to origin/main
 ```
 
 ## Local Development
