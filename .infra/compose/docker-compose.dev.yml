@@ -224,12 +224,12 @@ services:
       # Two roles: LLM fallback, and ALL RAG embeddings
       # (gemini-embedding-001 @ 1536 dims). Chat and inline editing use Groq.
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Optional, moderation only — see .env.example.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
       # baked into the browser bundle at build time and must be a build arg.
       - SENTRY_DSN=${SENTRY_DSN:-}
-      - COHERE_API_KEY=${COHERE_API_KEY}
-      - RESEND_API_KEY=${RESEND_API_KEY}
       - FRONTEND_URL=${FRONTEND_URL:-http://frontend.inkwell.ai}
       # Extra allowed origins beyond FRONTEND_URL. The legacy localhost origin
       # stays on the list so the OAuth callback and Swagger's "Try it out" keep
@@ -293,11 +293,12 @@ services:
       # Two roles: LLM fallback, and ALL RAG embeddings
       # (gemini-embedding-001 @ 1536 dims). Chat and inline editing use Groq.
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Optional, moderation only — see .env.example.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
       # baked into the browser bundle at build time and must be a build arg.
       - SENTRY_DSN=${SENTRY_DSN:-}
-      - COHERE_API_KEY=${COHERE_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - FRONTEND_URL=${FRONTEND_URL:-http://frontend.inkwell.ai}
