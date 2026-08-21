@@ -176,7 +176,40 @@ make dciup-all      # whole stack, detached
 make dci-logs-dev   # follow all logs, app services included
 ```
 
-### 7. URLs
+### 7. Demo data
+
+Two commands, in this order:
+
+```bash
+# Writers, articles, a subscribed magazine, marketplace listings and purchases,
+# engagement, notifications and a moderation queue. No API keys needed.
+docker compose -f .infra/compose/docker-compose.dev.yml --env-file .env \
+  --profile apps exec api pnpm db:seed
+
+# Embeds the corpus so RAG has something to retrieve. Needs GEMINI_API_KEY.
+docker compose -f .infra/compose/docker-compose.dev.yml --env-file .env \
+  --profile apps exec api pnpm db:embed-backfill --all
+```
+
+The seed is deliberately offline — it touches only Postgres, so it works with no
+keys configured and re-running it during a demo takes seconds. Embedding is the
+separate step because it makes real API calls; **skip it and the AI assistant
+still answers, but retrieves nothing**, which looks like a broken feature rather
+than a missing setup step.
+
+Re-running the seed is safe. It removes exactly what a previous run created,
+identified by the seeded usernames, and leaves hand-made accounts and articles
+alone. It also refuses to finish if the credit ledger it wrote does not balance.
+
+Sign in as any seeded account with the password `InkwellDemo123!`:
+
+| | |
+|---|---|
+| Writer | `nadia@example.com` |
+| Magazine | `editors@longformreview.example.com` |
+| Admin | `admin@inkwell.ai` |
+
+### 8. URLs
 
 | | |
 |---|---|
