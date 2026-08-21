@@ -16,7 +16,7 @@ DC_DEV_APPS = $(DC_DEV) --profile apps
         dciup-dev dciup-all dci-api dci-web dci-worker \
         dci-dev-build dci-down dci-down-clean dci-logs-dev dci-ps \
         dciup-prod dci-prod-build dci-down-prod dci-down-prod-clean dci-logs-prod \
-        dci-api-shell dci-web-shell dci-db-shell dci-reset \
+        dci-api-shell dci-web-shell dci-db-shell dci-reset dci-migrate \
         check-submodules git-spull dci-dev-rebuild check-hosts setup-hosts
 
 # Default target: `make` with no arguments prints this list.
@@ -28,6 +28,8 @@ help:
 	@echo "  make dci-api       Terminal 1: NestJS API, logs attached"
 	@echo "  make dci-web       Terminal 2: Next.js, logs attached"
 	@echo "  make dci-worker    Terminal 3: BullMQ worker, logs attached"
+	@echo ""
+	@echo "  make dci-migrate   Apply schema migrations (dci-api/worker do this for you)"
 	@echo ""
 	@echo "  make dciup-all     Everything detached (demo / onboarding)"
 	@echo "  make dci-logs-dev  Follow logs of every service, app services included"
@@ -114,6 +116,19 @@ dci-web: check-submodules
 
 dci-worker: check-submodules
 	$(DC_DEV) up --attach worker --menu=false worker
+
+# Apply the schema migrations and exit.
+#
+# Rarely needed by hand: `dci-api`, `dci-worker` and `dciup-all` all gate on the
+# migrate service completing, so the normal workflow runs it for you. This
+# target is for applying a NEW migration to a stack that is already up, and for
+# the case the compose dependency is the thing you are debugging.
+#
+# `up --exit-code-from` rather than `run`: it reuses the same one-shot service
+# the dependency graph gates on, so what runs here and what runs on `dci-api`
+# cannot drift, and a failing migration fails this target.
+dci-migrate: check-submodules
+	$(DC_DEV_APPS) up --exit-code-from migrate --attach migrate --menu=false migrate
 
 # The old `dciup-dev` behaviour: the entire stack detached in one command. Handy
 # for a demo or a first-run smoke test, where per-service control does not matter.
