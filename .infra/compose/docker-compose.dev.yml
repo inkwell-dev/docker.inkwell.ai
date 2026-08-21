@@ -87,6 +87,80 @@ services:
     networks:
       - inkwell
 
+  # ── Schema migrations (one-shot) ──────────────────────────────────────────
+  #
+  # Runs to completion and exits; `api` and `worker` are gated on it succeeding.
+  #
+  # ## Why this had to exist in dev too
+  #
+  # It did not, and that is the whole of the `relation "article_tags" does not
+  # exist` bug. The schema and the generated migrations were never out of sync —
+  # 24 tables on both sides — but nothing in the DEV path ever applied them:
+  # this file had no migrate service, `api` had no dependency to gate on, the
+  # Makefile had no target, and the README's onboarding went straight from
+  # `make dci-dev-build` to `make dci-api`. Production had all four (see
+  # docker-compose.production.yml) so the gap was invisible from the deploy
+  # side. A fresh clone therefore booted the API against an EMPTY database and
+  # failed on the first query that touched a table nobody had created.
+  #
+  # ## Why a separate service and not a step in the API's bootstrap
+  #
+  # So there is exactly one writer applying DDL. Two replicas racing on the same
+  # migration is a lock contest whose loser boots against a half-migrated
+  # schema. Same reasoning as production, and it is written out at length in
+  # backend.inkwell.ai/src/database/migrate.ts.
+  #
+  # ## Why the same runner as production rather than `drizzle-kit migrate`
+  #
+  # drizzle-kit is available here (it is a devDependency and dev images keep
+  # them), so it would have worked — and it would have made dev the one
+  # environment applying migrations by a different mechanism than the one being
+  # shipped. `db:migrate` runs `dist/src/database/migrate.js`, byte-identical to
+  # what the deploy runs, which also picks up the `CREATE EXTENSION vector` that
+  # drizzle-kit never emits and the baseline migration cannot do without.
+  #
+  # The `nest build` in that script costs ~40s on a cold tree and seconds
+  # afterwards (tsconfig sets `incremental: true`).
+  #
+  # ## Why it is in the "apps" profile
+  #
+  # `make dciup-dev` stays what it says it is — infrastructure only — and does
+  # not acquire a dependency on a built application image. Naming `api` on the
+  # command line enables the profile, so `make dci-api` still pulls this in and
+  # waits for it.
+  #
+  # `restart: "no"` is explicit and load-bearing wherever a restart policy could
+  # be inherited: a clean exit 0 must not read as a crash worth restarting.
+  migrate:
+    image: inkwell-api:dev
+    build:
+      context: ../../src/backend.inkwell.ai
+      dockerfile: ../../.infra/dockerfiles/api.dev.dockerfile
+      target: development
+      args:
+        UID: ${DOCKER_UID:-1000}
+        GID: ${DOCKER_GID:-1000}
+    working_dir: /app
+    profiles: ["apps"]
+    # Shares the backend bind mount and the api's node_modules volume, so it
+    # must run as the same non-root user — it writes dist/ into the developer's
+    # working tree exactly as the api container does (see the note there).
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    command: pnpm db:migrate
+    volumes:
+      - ../../src/backend.inkwell.ai:/app
+      - api_node_modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - COREPACK_HOME=/tmp/corepack
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - inkwell
+
   # ── Backend API (hot reload) ──────────────────────────────────────────────
   api:
     image: inkwell-api:dev
@@ -166,6 +240,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Waits for the one-shot migration to exit 0. Without this the service
+      # starts against whatever schema happens to be there, which is how an
+      # empty database became a runtime error instead of a startup failure.
+      migrate:
+        condition: service_completed_successfully
     networks:
       - inkwell
 
@@ -228,6 +307,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Waits for the one-shot migration to exit 0. Without this the service
+      # starts against whatever schema happens to be there, which is how an
+      # empty database became a runtime error instead of a startup failure.
+      migrate:
+        condition: service_completed_successfully
     networks:
       - inkwell
 

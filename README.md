@@ -124,7 +124,30 @@ the cache entirely and is only for a wedged build.
 These are separate from the `Dockerfile` in each app repo — those build the
 compiled production images used by CI and have no development target.
 
-### 5. Run it — four terminals
+### 5. Database schema
+
+Nothing to run: `make dci-api`, `make dci-worker` and `make dciup-all` all wait
+on a one-shot `migrate` service that applies the versioned migrations in
+`src/backend.inkwell.ai/drizzle/` and installs the pgvector extension. It is the
+same runner the deploy uses, so dev and production apply the schema by identical
+means.
+
+This is worth knowing about because its absence used to be a bug. Dev had no
+migrate service and no target, so a fresh clone booted the API against a
+completely empty database and died on the first query with
+`relation "article_tags" does not exist` — which reads like a missing table and
+was in fact a missing step.
+
+After generating a **new** migration, apply it to a running stack yourself:
+
+```bash
+make dci-migrate
+```
+
+The `depends_on` gate is satisfied by a migrate container that has already
+exited 0, so restarting the API alone will not pick up a migration added since.
+
+### 6. Run it — four terminals
 
 Application services do **not** start automatically. They sit behind the `apps`
 compose profile so each one can run in its own terminal, be restarted on its own,
@@ -153,7 +176,7 @@ make dciup-all      # whole stack, detached
 make dci-logs-dev   # follow all logs, app services included
 ```
 
-### 6. URLs
+### 7. URLs
 
 | | |
 |---|---|
@@ -171,6 +194,7 @@ target.
 ### Common tasks
 
 ```bash
+make dci-migrate     # apply schema migrations to a running stack
 make dci-ps          # what is running
 make dci-api-shell   # shell into the api container (must already be running)
 make dci-db-shell    # shell into postgres
