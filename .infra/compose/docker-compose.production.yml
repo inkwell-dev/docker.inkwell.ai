@@ -114,12 +114,12 @@ services:
       # Two roles: LLM fallback, and ALL RAG embeddings
       # (gemini-embedding-001 @ 1536 dims). Chat and inline editing use Groq.
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Optional, moderation only — see .env.example.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
       # baked into the browser bundle at build time and must be a build arg.
       - SENTRY_DSN=${SENTRY_DSN:-}
-      - COHERE_API_KEY=${COHERE_API_KEY}
-      - RESEND_API_KEY=${RESEND_API_KEY}
     depends_on:
       db:
         condition: service_healthy
@@ -163,11 +163,12 @@ services:
       # Two roles: LLM fallback, and ALL RAG embeddings
       # (gemini-embedding-001 @ 1536 dims). Chat and inline editing use Groq.
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Optional, moderation only — see .env.example.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
       # baked into the browser bundle at build time and must be a build arg.
       - SENTRY_DSN=${SENTRY_DSN:-}
-      - COHERE_API_KEY=${COHERE_API_KEY}
     depends_on:
       db:
         condition: service_healthy
