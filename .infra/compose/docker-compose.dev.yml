@@ -68,6 +68,11 @@ services:
       # the *browser* can reach — never a container name.
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://frontend.inkwell.ai/api}
       - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-http://frontend.inkwell.ai}
+      # Gates the Google sign-in button. Defaults OFF: GoogleStrategy falls back
+      # to the client id 'not-configured' rather than failing at boot, so with no
+      # credentials the button would render and dead-end the user on Google's own
+      # error page. Set to 'true' once GOOGLE_CLIENT_ID/SECRET hold real values.
+      - NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED=${NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED:-false}
       # Server-side only: the three generateMetadata() calls in
       # src/lib/api/server-fetch.ts run inside this container, where the public
       # hostname is reachable but the direct container name is one hop shorter
