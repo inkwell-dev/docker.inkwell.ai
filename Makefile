@@ -16,7 +16,7 @@ DC_DEV_APPS = $(DC_DEV) --profile apps
         dciup-dev dciup-all dci-api dci-web dci-worker \
         dci-dev-build dci-down dci-down-clean dci-logs-dev dci-ps \
         dciup-prod dci-prod-build dci-down-prod dci-down-prod-clean dci-logs-prod \
-        dci-api-shell dci-web-shell dci-db-shell dci-reset dci-migrate \
+        dci-api-shell dci-web-shell dci-db-shell dci-reset dci-migrate dci-seed \
         check-submodules git-spull dci-dev-rebuild check-hosts setup-hosts
 
 # Default target: `make` with no arguments prints this list.
@@ -30,6 +30,7 @@ help:
 	@echo "  make dci-worker    Terminal 3: BullMQ worker, logs attached"
 	@echo ""
 	@echo "  make dci-migrate   Apply schema migrations (dci-api/worker do this for you)"
+	@echo "  make dci-seed      Fill the dev database with a demo corpus (SEED_ARGS=... to tune)"
 	@echo ""
 	@echo "  make dciup-all     Everything detached (demo / onboarding)"
 	@echo "  make dci-logs-dev  Follow logs of every service, app services included"
@@ -153,6 +154,32 @@ dci-worker: check-submodules
 # cannot drift, and a failing migration fails this target.
 dci-migrate: check-submodules
 	$(DC_DEV_APPS) up --exit-code-from migrate --attach migrate --menu=false migrate
+
+# Fill the development database with a realistic corpus: writers with distinct
+# subjects, articles at four different lengths in the editor's own TipTap
+# format, generated cover art and avatars in MinIO, engagement, analytics and a
+# balanced credit ledger.
+#
+# Safe to re-run: it removes exactly the rows a previous seed created and leaves
+# hand-made accounts alone.
+#
+#   make dci-seed
+#   make dci-seed SEED_ARGS="--preset=large"     # a lot more of everything
+#   make dci-seed SEED_ARGS="--fresh"            # wipe the database first
+#   make dci-seed SEED_ARGS="--seed=42"          # a different, reproducible dataset
+#   make dci-seed SEED_ARGS="--help"             # every flag
+#
+# `run --rm` rather than `exec`: the seed is a one-shot job, and running it in
+# its own container means it does not need the api service to be up — only the
+# database, which `make dciup-dev` already brings. `--no-deps` stops compose
+# from starting api, worker and the migration alongside it.
+#
+# No `-e DATABASE_URL` here: the api service definition already takes it from
+# .env, and passing `-e DATABASE_URL=$${DATABASE_URL}` sets it to whatever the
+# calling SHELL has — which is normally nothing, and overriding it with an empty
+# value is worse than not overriding it at all.
+dci-seed: check-submodules
+	$(DC_DEV_APPS) run --rm --no-deps api pnpm db:seed $(SEED_ARGS)
 
 # The old `dciup-dev` behaviour: the entire stack detached in one command. Handy
 # for a demo or a first-run smoke test, where per-service control does not matter.

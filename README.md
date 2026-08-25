@@ -209,18 +209,17 @@ make dci-logs-dev   # follow all logs, app services included
 Two commands, in this order:
 
 ```bash
-# Writers, articles, a subscribed magazine, marketplace listings and purchases,
-# engagement, notifications and a moderation queue. No API keys needed.
-docker compose -f .infra/compose/docker-compose.dev.yml --env-file .env \
-  --profile apps exec api pnpm db:seed
+# Writers, articles, cover art, a subscribed magazine, marketplace purchases,
+# engagement, analytics and a moderation queue. No API keys needed. ~2 seconds.
+make dci-seed
 
 # Embeds the corpus so RAG has something to retrieve. Needs GEMINI_API_KEY.
 docker compose -f .infra/compose/docker-compose.dev.yml --env-file .env \
   --profile apps exec api pnpm db:embed-backfill --all
 ```
 
-The seed is deliberately offline — it touches only Postgres, so it works with no
-keys configured and re-running it during a demo takes seconds. Embedding is the
+The seed is deliberately offline — Postgres and MinIO, both of which
+`make dciup-dev` already brings up, and no third-party service. Embedding is the
 separate step because it makes real API calls; **skip it and the AI assistant
 still answers, but retrieves nothing**, which looks like a broken feature rather
 than a missing setup step.
@@ -236,6 +235,26 @@ Sign in as any seeded account with the password `InkwellDemo123!`:
 | Writer | `nadia@example.com` |
 | Magazine | `editors@longformreview.example.com` |
 | Admin | `admin@inkwell.ai` |
+
+These names are fixed and never change between runs or presets, so a saved login
+keeps working.
+
+#### Controlling the volume
+
+`SEED_ARGS` is passed straight through to the seeder:
+
+```bash
+make dci-seed SEED_ARGS="--preset=large"    # 18 writers, 155 articles, 23k events
+make dci-seed SEED_ARGS="--preset=minimal"  # the smallest corpus every screen renders against
+make dci-seed SEED_ARGS="--fresh"           # wipe the database first — nothing survives
+make dci-seed SEED_ARGS="--seed=42"         # a different dataset, reproducible anywhere
+make dci-seed SEED_ARGS="--no-images"       # skip cover art and MinIO entirely
+make dci-seed SEED_ARGS="--help"            # every flag
+```
+
+The same seed number always produces the same rows, ids, slugs and images, so a
+dataset can be reproduced on another machine from the number alone. Full
+documentation is in `src/backend.inkwell.ai/README.md`.
 
 ### 8. URLs
 
@@ -256,6 +275,7 @@ target.
 
 ```bash
 make dci-migrate     # apply schema migrations to a running stack
+make dci-seed        # (re)fill the database with demo data — SEED_ARGS="..." to tune
 make dci-ps          # what is running
 make dci-api-shell   # shell into the api container (must already be running)
 make dci-db-shell    # shell into postgres
