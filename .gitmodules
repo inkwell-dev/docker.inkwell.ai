@@ -1,8 +1,21 @@
+# URLs are RELATIVE to this repository's own `origin`, deliberately.
+#
+# An absolute git@github.com:... URL hardcodes one host, and therefore one SSH
+# identity. Anyone whose default github.com key is not a member of inkwell-dev
+# — a second personal account, a work/personal split routed through an SSH
+# alias — gets "Repository not found" on every submodule, while the superproject
+# itself clones fine. GitHub returns 404, not 403, for private repos you cannot
+# see, so the error blames the URL rather than the credentials.
+#
+# Relative URLs are resolved against `origin` at clone time, so the submodules
+# inherit whatever host and identity already worked for the parent — plain SSH,
+# HTTPS, or a personal `Host` alias from ~/.ssh/config. Nobody needs local
+# config, and no per-machine setup is committed here.
 [submodule "src/frontend.inkwell.ai"]
 	path = src/frontend.inkwell.ai
-	url = git@github.com:inkwell-dev/frontend.inkwell.ai.git
+	url = ../frontend.inkwell.ai.git
 	branch = main
 [submodule "src/backend.inkwell.ai"]
 	path = src/backend.inkwell.ai
-	url = git@github.com:inkwell-dev/backend.inkwell.ai.git
+	url = ../backend.inkwell.ai.git
 	branch = main

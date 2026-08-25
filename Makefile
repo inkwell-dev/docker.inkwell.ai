@@ -81,7 +81,17 @@ setup-hosts:
 check-submodules:
 	@for d in frontend.inkwell.ai backend.inkwell.ai; do \
 		test -f src/$$d/package.json || { \
-			echo "ERROR: src/$$d is empty — run: git submodule update --init --recursive"; \
+			echo "ERROR: src/$$d is empty — the app source was never checked out."; \
+			echo ""; \
+			echo "  make git-spull      populate both submodules (safe to re-run)"; \
+			echo ""; \
+			echo "Still failing with 'Repository not found'? Your default github.com"; \
+			echo "identity is not a member of inkwell-dev. Check with:"; \
+			echo ""; \
+			echo "  ssh -T git@github.com          who git thinks you are"; \
+			echo ""; \
+			echo "Clone with the account that HAS access and the submodules follow it,"; \
+			echo "because their URLs in .gitmodules are relative to this repo's origin."; \
 			exit 1; \
 		}; \
 	done
