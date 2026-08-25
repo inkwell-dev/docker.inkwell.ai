@@ -99,8 +99,22 @@ check-submodules:
 # Pull this repo, then fast-forward each submodule to the branch declared in
 # .gitmodules (main for both). Committing the resulting pointer bump is a
 # separate, deliberate step — that commit is what pins the deployable revision.
+#
+# The pull is conditional. `git pull origin <branch>` fails outright when the
+# current branch has no counterpart on origin — a local feature branch that has
+# never been pushed — and that failure used to abort the target before the two
+# submodule lines ran, which are the part you actually wanted. Same story on a
+# detached HEAD, where there is no branch name to pull at all.
 git-spull:
-	git pull origin $$(git rev-parse --abbrev-ref HEAD)
+	@branch=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$branch" = "HEAD" ]; then \
+		echo "Detached HEAD — skipping pull, syncing submodules only."; \
+	elif git ls-remote --exit-code --heads origin "$$branch" > /dev/null 2>&1; then \
+		echo "Pulling origin/$$branch ..."; \
+		git pull origin "$$branch"; \
+	else \
+		echo "Branch '$$branch' is not on origin yet — skipping pull, syncing submodules only."; \
+	fi
 	git submodule sync --recursive
 	git submodule update --init --remote --recursive
 
