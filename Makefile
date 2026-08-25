@@ -81,7 +81,17 @@ setup-hosts:
 check-submodules:
 	@for d in frontend.inkwell.ai backend.inkwell.ai; do \
 		test -f src/$$d/package.json || { \
-			echo "ERROR: src/$$d is empty — run: git submodule update --init --recursive"; \
+			echo "ERROR: src/$$d is empty — the app source was never checked out."; \
+			echo ""; \
+			echo "  make git-spull      populate both submodules (safe to re-run)"; \
+			echo ""; \
+			echo "Still failing with 'Repository not found'? Your default github.com"; \
+			echo "identity is not a member of inkwell-dev. Check with:"; \
+			echo ""; \
+			echo "  ssh -T git@github.com          who git thinks you are"; \
+			echo ""; \
+			echo "Clone with the account that HAS access and the submodules follow it,"; \
+			echo "because their URLs in .gitmodules are relative to this repo's origin."; \
 			exit 1; \
 		}; \
 	done
@@ -89,8 +99,22 @@ check-submodules:
 # Pull this repo, then fast-forward each submodule to the branch declared in
 # .gitmodules (main for both). Committing the resulting pointer bump is a
 # separate, deliberate step — that commit is what pins the deployable revision.
+#
+# The pull is conditional. `git pull origin <branch>` fails outright when the
+# current branch has no counterpart on origin — a local feature branch that has
+# never been pushed — and that failure used to abort the target before the two
+# submodule lines ran, which are the part you actually wanted. Same story on a
+# detached HEAD, where there is no branch name to pull at all.
 git-spull:
-	git pull origin $$(git rev-parse --abbrev-ref HEAD)
+	@branch=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$branch" = "HEAD" ]; then \
+		echo "Detached HEAD — skipping pull, syncing submodules only."; \
+	elif git ls-remote --exit-code --heads origin "$$branch" > /dev/null 2>&1; then \
+		echo "Pulling origin/$$branch ..."; \
+		git pull origin "$$branch"; \
+	else \
+		echo "Branch '$$branch' is not on origin yet — skipping pull, syncing submodules only."; \
+	fi
 	git submodule sync --recursive
 	git submodule update --init --remote --recursive
 

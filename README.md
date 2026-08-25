@@ -46,7 +46,35 @@ Already cloned without `--recurse-submodules`? The `src/` directories will be
 empty and every app container exits immediately on start:
 
 ```bash
-git submodule update --init --recursive
+make git-spull
+```
+
+### `Repository not found` on the submodules
+
+The submodule URLs in `.gitmodules` are **relative** (`../frontend.inkwell.ai.git`),
+so they resolve against whatever `origin` this repo was cloned from and reuse the
+same host and SSH identity. Clone with an account that belongs to `inkwell-dev`
+and the submodules follow it — including through a `Host` alias in
+`~/.ssh/config`, if you keep work and personal GitHub accounts separate:
+
+```bash
+# ~/.ssh/config
+Host github-work
+  HostName github.com
+  IdentityFile ~/.ssh/id_work
+  IdentitiesOnly yes
+```
+
+```bash
+git clone --recurse-submodules git@github-work:inkwell-dev/docker.inkwell.ai.git
+```
+
+If the parent repo clones but the submodules fail, the identity is the cause, not
+the URL — GitHub answers `404 Repository not found` rather than a permission error
+for private repos you cannot see. Check who git is authenticating as:
+
+```bash
+ssh -T git@github.com     # "Hi <user>!" — is that the account in the org?
 ```
 
 Both submodules track `main` (declared in `.gitmodules`). A submodule pins an
