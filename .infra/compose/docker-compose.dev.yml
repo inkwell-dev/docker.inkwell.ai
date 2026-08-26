@@ -231,6 +231,11 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       # Optional, moderation only — see .env.example.
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Photographs for `pnpm db:seed` only — nothing in the running
+      # application reads it. Optional: with no key the seeder falls back to
+      # generated placeholder art rather than failing, so `make dci-seed` works
+      # on a machine that has never configured one.
+      - PEXELS_API_KEY=${PEXELS_API_KEY:-}
       # Error reporting. Optional: with no DSN the SDK no-ops. This one IS
       # runtime config, unlike the frontend's NEXT_PUBLIC_SENTRY_DSN, which is
       # baked into the browser bundle at build time and must be a build arg.
