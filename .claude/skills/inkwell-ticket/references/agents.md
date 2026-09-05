@@ -6,12 +6,50 @@ environment, and everything it has to rediscover is time and tokens spent twice.
 
 ## Contents
 
+- [Choosing a model](#choosing-a-model)
 - [What every prompt must carry](#what-every-prompt-must-carry)
 - [Planning](#planning)
 - [Building](#building)
 - [Review](#review)
 - [Optional passes](#optional-passes)
 - [When an agent dies](#when-an-agent-dies)
+
+## Choosing a model
+
+Do not put every agent on the largest model. It is not only the cost — running
+several large agents concurrently is what exhausts a session's rate limit, and a
+build agent killed at 70% has to be resumed by another cold agent that re-reads
+everything. Cheaper agents where cheaper is enough makes the pipeline *finish
+more often*, which matters more than the saving.
+
+The rule of thumb: **spend on judgement, economise on execution.**
+
+| Stage | Default | Why |
+|---|---|---|
+| Exploration / search | Haiku or Sonnet | Fan-out reading. Use the `Explore` agent — it exists for this and keeps file dumps out of your context. |
+| Planning | Opus | Highest leverage in the pipeline; everything downstream inherits its mistakes. Sonnet is fine for a genuinely small ticket. |
+| Backend build | Sonnet, Opus when earned | See the escalation triggers below. |
+| Frontend build | Sonnet | By this point the plan has made the hard calls. This stage is wiring against a written contract. |
+| Review | **Opus, always** | The one stage where a miss ships a defect. It has earned it every time. |
+| Spec reconciliation | Sonnet | Mechanical once you know what changed — the judgement was in noticing it was needed. |
+| Resuming a dead agent | Same as, or one tier below, the original | It works from an explicit inventory of what remains, so the ambiguity is lower. |
+
+**Escalate the backend to Opus when the ticket involves** a schema change, a new
+paginated list (the `countRows` trap), a transaction boundary, concurrency, an
+access-control rule, or a query whose correctness is not obvious by reading. Keep
+it on Sonnet for CRUD that mirrors an existing module.
+
+**Escalate the frontend to Opus** only when the ticket is genuinely novel
+interaction or state design rather than following an established pattern.
+
+Two things worth knowing about the mechanics: an explicit `model` on the Agent
+call overrides whatever the agent definition specifies, so you are opting out of
+a considered default — check the definition before overriding it. And a `fork`
+subagent always runs on the parent's model, so the parameter is ignored there.
+
+If you find yourself reaching for Opus everywhere, the honest test is: *would a
+careful engineer following the plan need to make a hard judgement call here, or
+just execute it carefully?* Only the first is worth the larger model.
 
 ## What every prompt must carry
 

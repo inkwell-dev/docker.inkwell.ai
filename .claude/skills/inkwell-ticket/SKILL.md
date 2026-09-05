@@ -69,6 +69,12 @@ Investigate first, ask second. A question you could have answered with `grep`
 spends the user's attention for nothing, and arriving with findings makes the
 remaining questions sharper.
 
+For anything broader than a couple of targeted greps, use the `Explore` agent
+rather than reading files yourself. It sweeps many files and returns the
+conclusion, so the file contents never enter your context — and it runs happily
+on a small model, because locating code is not the part that needs judgement.
+Read files directly only once you know which ones matter.
+
 Establish, before asking anything:
 - Does any of this already exist? Search all three repos. Features here are
   often half-built — a previous ticket's controls were already drawn and sitting
@@ -209,6 +215,11 @@ directory.
 
 **Never report a gate you did not watch pass.** If you did not see it, say so.
 `superpowers:verification-before-completion` spells out the discipline.
+
+You do not need a third full run. The build agents run the gates, review re-runs
+them because a self-report is not evidence, and that is enough — **unless you
+changed code afterwards**, which fixing review findings means you did. Re-run
+what your fixes could have touched; do not re-run the whole suite out of ritual.
 
 State plainly what is *not* verified. There is no usable browser, so anything
 visual is a source-level judgement and should be described as one.
