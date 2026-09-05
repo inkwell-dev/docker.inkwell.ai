@@ -1,2 +1,7 @@
 .env
 .infra/nginx/certs/
+
+# Ticket working files — plans handed to build agents. Local to a machine,
+# but at a STABLE path so a resumed session can find them; the session
+# scratchpad cannot be found again after the session that made it dies.
+.tickets/

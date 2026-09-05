@@ -19,3 +19,7 @@
 	path = src/backend.inkwell.ai
 	url = ../backend.inkwell.ai.git
 	branch = main
+[submodule "spec.inkwell.ai"]
+	path = spec.inkwell.ai
+	url = ../spec.inkwell.ai.git
+	branch = main

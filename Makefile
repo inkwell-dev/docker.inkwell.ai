@@ -96,6 +96,17 @@ check-submodules:
 			exit 1; \
 		}; \
 	done
+	@# The spec is checked separately because it is not an app: it has no
+	@# package.json, so the sentinel above would report it empty even when it is
+	@# fully checked out. A ticket that changes behaviour usually has to update
+	@# the spec in the same pass, so a missing checkout here is worth catching
+	@# early rather than halfway through the work.
+	@test -f spec.inkwell.ai/10-requirements.md || { \
+		echo "ERROR: spec.inkwell.ai is empty — the specification was never checked out."; \
+		echo ""; \
+		echo "  make git-spull      populate every submodule (safe to re-run)"; \
+		exit 1; \
+	}
 
 # Pull this repo, then fast-forward each submodule to the branch declared in
 # .gitmodules (main for both). Committing the resulting pointer bump is a
