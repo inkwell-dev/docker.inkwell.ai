@@ -53,6 +53,12 @@ gh pr view <n> --repo <repo> --json title,body --jq '.title + .body' \
   | grep -icE "claude|co-authored|generated with|🤖"                        # want 0
 ```
 
+**Run these as their own command.** The `no-ai-attribution` hook inspects the
+whole shell command, so chaining the check onto the `git commit` or
+`gh pr create` it is checking makes your own grep pattern trip it. The hook is
+behaving correctly — the string really is there — but the result is a confusing
+block on a clean commit. Commit first, verify second.
+
 ## Branches
 
 One branch per repo, and the **same name** across every repo a ticket touches so
