@@ -56,8 +56,8 @@ just execute it carefully?* Only the first is worth the larger model.
 Regardless of stage:
 
 1. **The path to `references/environment.md`**, or its contents inline. Without
-   it an agent will try to run things on the host, invent `npx jest`, or spend
-   twenty minutes trying to open a browser.
+   it an agent will try to run things on the host, invent `npx jest`, or miss
+   that the app can be opened in a browser at all.
 2. **Its working tree, absolutely**, and an explicit instruction not to touch
    the other repos. Parallel agents editing the same tree is the one way this
    pipeline corrupts itself.
@@ -103,8 +103,14 @@ concurrently. One per repo.
 Give each the plan's *path*, not its contents. Name the sections that are
 theirs.
 
-The frontend agent should be told which parts are logic-verifiable and which are
-not, so it does not go looking for a browser.
+The frontend agent should be told which parts are logic-verifiable by `tsc` and
+`eslint` and which are only observable by eye — and that the second kind **can**
+be observed, through the Chrome extension at `http://frontend.inkwell.ai/`.
+
+Telling an agent there is no browser is how a ticket ends up reported as
+unverified when it was not. If you would rather do the visual pass yourself,
+say so explicitly instead: the agent should know the check is owned, not
+impossible.
 
 Useful additions by ticket shape:
 

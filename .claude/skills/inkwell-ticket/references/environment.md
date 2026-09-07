@@ -10,7 +10,7 @@ by reading the repo, and every item cost real time to learn.
 - [Traps that look like broken code](#traps-that-look-like-broken-code)
 - [Talking to the API](#talking-to-the-api)
 - [The database](#the-database)
-- [There is no browser](#there-is-no-browser)
+- [Verifying in a browser](#verifying-in-a-browser)
 - [Starting and resetting the stack](#starting-and-resetting-the-stack)
 - [Schema changes](#schema-changes)
 - [Tests](#tests)
@@ -107,15 +107,79 @@ together are therefore safe, as long as nothing writes a row using the value.
 **Clean up after live testing.** Rows written by smoke tests stay in the seeded
 demo database and will show up in a demo. Check for them before finishing.
 
-## There is no browser
+## Verifying in a browser
 
-Chrome cannot reach `*.inkwell.ai` — `ERR_BLOCKED_BY_CLIENT`, even in a clean
-profile, most likely DNS-rebinding protection, since `/etc/hosts` maps those
-names to `127.0.0.2`. Loopback origins load pages but cannot reach the API,
-because `NEXT_PUBLIC_API_URL` is inlined at build time.
+**Corrected 2026-09-07. This section previously said "There is no browser" and
+told you not to try. That was wrong, and it cost a whole ticket's visual
+verification** — two build agents and a review were instructed not to attempt a
+visual step, and the frontend shipped described as source-level only when it
+could have been watched working.
 
-Do not plan a visual verification step, and do not spend time trying to make one
-work. Say plainly that anything visual is source-level only.
+### What works
+
+The **Claude Chrome extension** (`mcp__claude-in-chrome__*`) against
+**`http://frontend.inkwell.ai/`**. The app loads, signed in, with live data.
+
+**The API works too, with no env change and no container restart.**
+`NEXT_PUBLIC_API_URL` is `http://frontend.inkwell.ai/api` — the *same origin*,
+proxied by nginx. The old note's premise was that the inlined API URL made the
+app undrivable; in fact loading the hostname gets you the API for free. It was
+the *loopback* origins that could not reach it, and the fix is to stop using
+them.
+
+`docker ps` first: the stack must be up, or you will diagnose a blank page as a
+code fault.
+
+### What does not work
+
+Headless or automated Chromium launched **on the host** — `agent-browser`,
+Playwright, raw CDP — gets `net::ERR_BLOCKED_BY_CLIENT` on the `*.inkwell.ai`
+names, reproducibly and in a clean profile. `/etc/hosts` maps them to
+`127.0.0.2`, so the likely cause is a public hostname resolving to loopback.
+That finding is real; it simply never applied to the extension driving the
+user's own Chrome. Do not spend time fighting it — use the extension.
+
+### Never authenticate as someone
+
+**Do not type a password into the login form, and do not send one in an API
+call**, seeded demo accounts included. Work with whichever account is already
+signed in, and choose test subjects to match that session — query the database
+for a user in the state you need rather than guessing usernames, which wastes a
+round trip on a 404.
+
+```bash
+docker exec inkwell-db-1 psql -U inkwell -d inkwell -t -A -F'|' \
+  -c "SELECT u.username, count(*) FROM articles a JOIN users u ON u.id = a.author_id
+      WHERE a.placement = 'marketplace' AND a.deleted_at IS NULL
+      GROUP BY u.username ORDER BY 2 DESC LIMIT 5;"
+```
+
+### Testing a second account
+
+One Chrome **profile** holds exactly one session: auth lives in `localStorage`
+(canonical, read by the Axios interceptor) plus a cookie for the proxy, and both
+are origin-scoped, so every tab in a profile shares it. There is no per-tab
+isolation to exploit and no first-party Chrome container feature.
+
+So **ask the user** to open a second Chrome profile, sign in there, and say
+which account it is. Each profile runs its own extension instance, so it appears
+in `list_connected_browsers` as a separate device; switch with `select_browser`.
+Note two limits: it is **sequential**, not side by side — selecting a browser
+switches the whole session — and site permissions are **per profile**, so the
+new one needs `frontend.inkwell.ai` granted again.
+
+Signed-out is cheaper: an **incognito window** is a clean storage partition and
+needs no credentials at all, provided the extension is allowed in incognito.
+
+Before acting on a multi-browser list, `list_connected_browsers` requires you to
+ask the user which one — never pick for them.
+
+### What a browser still does not give you
+
+**There is no frontend test suite.** A browser check is a manual observation, not
+regression protection: it proves the behaviour today and guards nothing
+tomorrow. Report what was *seen* as seen, and keep saying that `tsc` and
+`eslint` are the only automated frontend coverage.
 
 ## Starting and resetting the stack
 

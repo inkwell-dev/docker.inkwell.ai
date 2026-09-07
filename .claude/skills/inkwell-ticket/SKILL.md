@@ -11,9 +11,11 @@ judge when a stage genuinely does not apply rather than skipping it by reflex.
 
 **Read `references/environment.md` before running any command.** It holds facts
 that are not discoverable by looking at the repo and that have each cost hours:
-nothing runs on the host, the browser cannot reach this app, and two of the
-obvious test invocations fail in ways that look like broken code rather than
-broken commands.
+nothing runs on the host, two of the obvious test invocations fail in ways that
+look like broken code rather than broken commands, and the browser story is the
+opposite of what this file used to claim — the Chrome extension *can* drive the
+app, and a stale note saying otherwise suppressed a ticket's worth of visual
+verification.
 
 ## The one-screen version
 
@@ -221,8 +223,17 @@ them because a self-report is not evidence, and that is enough — **unless you
 changed code afterwards**, which fixing review findings means you did. Re-run
 what your fixes could have touched; do not re-run the whole suite out of ritual.
 
-State plainly what is *not* verified. There is no usable browser, so anything
-visual is a source-level judgement and should be described as one.
+State plainly what is *not* verified — and check whether it really is not.
+Anything visual **can** be seen through the Chrome extension at
+`http://frontend.inkwell.ai/`; `references/environment.md` has the procedure,
+including how to get a second account in front of you and why you must never
+type a password to do it.
+
+What stays true is that there is **no frontend test suite**, so a browser check
+is a manual observation rather than regression protection. Report what you
+actually saw as seen, and say that `tsc` and `eslint` are the only automated
+frontend coverage. A visual check you *could* have run and did not is not a
+limitation to disclose — it is one to go and run.
 
 ## Stage 7 — Ship
 
