@@ -232,10 +232,16 @@ a test that catches a bug and one that agrees with itself.
 
 Run a single suite with `npm test -- test/<area>/<name>.spec.ts`.
 
-**There is no frontend test suite.** `tsc` and `eslint` are the only frontend
-gates, which is why frontend correctness leans on the backend's integration tests
-and on careful reading. Say so when reporting rather than implying more coverage
-than exists.
+**There is no runnable frontend test suite.** `tsc` and `eslint` are the only
+frontend gates, which is why frontend correctness leans on the backend's
+integration tests and on careful reading. Say so when reporting rather than
+implying more coverage than exists.
+
+A Playwright suite does exist at `e2e/` (25 specs, `playwright.config.ts`, last
+recorded green on 2026-08-15), but as of 2026-09-12 nothing can run it: the host
+`node_modules/` is the empty volume mount, so there is no `@playwright/test` on
+the host, and the web container has no browsers cached. Do not spend a ticket
+trying — treat it as documentation of the flows, not as a gate.
 
 ## Silent-breakage patterns in this codebase
 
