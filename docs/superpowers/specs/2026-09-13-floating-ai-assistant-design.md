@@ -388,3 +388,21 @@ departs from it and why.
 Known and deliberately left: StarterKit's trailing-node rule appends an empty
 paragraph after a write that ends the document with a heading; the streaming
 caret renders at the block boundary rather than after the last word.
+
+13. **A selection rewrite replaces whole blocks** (browser pass, 2026-09-14).
+    The hook widens a non-empty selection to the top-level block(s) it touches
+    — positions and the text sent to the model — because the writer streams
+    whole blocks; a partial rewrite had cut the selected words out of the
+    sentence and appended the rewrite as a new paragraph.
+14. **The rewrite prompt is bounded to the passage.** Told only that its output
+    "replaces" a passage, the model kept writing and re-emitted the sections
+    that followed; the inner prompt now says the entire output replaces the
+    passage, at about the same length, and to stop.
+15. **The transport sends text parts only.** The SDK's history carried tool
+    and step parts back to the server, which the strict DTO rejected with a
+    400 on the second turn after a write; the client trims to text, which is
+    all the server reads.
+
+Known, pre-existing, not addressed here: the chat transport has no refresh
+on a 401, so an access token expiring mid-session fails the next message (the
+failure is now shown in the panel; the old hook carried the same TODO).
