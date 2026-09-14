@@ -324,3 +324,85 @@ backend (`ai.service.ts`, `ai.controller.ts`, `dto/chat.dto.ts`,
 `features/editor/editor-shell.tsx`, `use-autosave.ts`, `tiptap-editor.tsx`) ·
 spec (`5-ai-design.md` §§9–11, `2-features.md` §3, `10-requirements.md`
 FR/US rows for routing, in-document writing, Keep/Discard and status).
+
+## 11. Corrections during implementation (2026-09-14)
+
+Each of these was ruled during execution with this spec as the authority; the
+spec text above is left as approved, and these notes say where the build
+departs from it and why.
+
+1. **Retrieval runs inside the write tool, not before the outer call.** The
+   outer (routing/recap) prompt carries the article and the style profile only;
+   passages are fetched for the brief once the model has decided to write. So a
+   question never runs the embedding search, and the honest step order is
+   draft → profile → thinking → *retrieval → writing* → done (§3.3's table
+   listed retrieval before thinking). Cost of a write: the lean outer prompt
+   twice plus one full inner call.
+2. **`data-article-start`** was added to the contract (§3.1) so the client
+   opens its insertion range from a data part, independent of the SDK's tool
+   part timing.
+3. **Undo-as-one is not history grouping.** prosemirror-history groups by time
+   *and* adjacency, so a stream with pauses would leave many undo steps. Appends
+   are `addToHistory: false`; on Keep the range is restored to its pre-write
+   state invisibly and then the AI text is re-applied as one recorded event —
+   "replace the original selection with the AI text" — so a single undo also
+   brings a replaced selection back. Discard restores the replaced selection
+   from an anchor held in plugin state.
+4. **The range opens at a block boundary.** The writer never streams into the
+   middle of the writer's own paragraph: for `cursor` it opens *after* the block
+   the cursor is in (before it when that block is empty); for
+   `replace_selection` a whole-node selection replaces the node. Written text is
+   therefore always a run of whole top-level nodes. The range end is tracked
+   from each transaction's step map, and the writer's own transactions set the
+   range explicitly rather than relying on mapping bias. Covered by a headless
+   TipTap harness (`article-writer.check.ts`, 10 cases) that reproduces the
+   original defect — streaming into a paragraph's end deleted it — before the
+   fix.
+5. **A user insertion exactly at a range edge stays outside it.** Mapping bias
+   is outward only for the writer's own transactions; inward for everyone else;
+   both ends the same way while the range is empty.
+6. **Provider outage is an `error` part on an open 200 stream**, not a 503
+   (§5.4): the pre-model stages are streamed live, so the response is open
+   before a model is chosen. The copy is unchanged.
+7. **A stop mid-write is billed as an estimate** — inner prompt plus text
+   produced, ~4 characters per token — because `onFinish` does not fire on
+   abort.
+8. **The Keep/Discard bar is positioned by `coordsAtPos`**, not BubbleMenu
+   (which needs a selection); it stacks above the dock and clamps to the
+   viewport, since the dock disables its own input until the bar is used.
+9. **A new turn is refused while a write awaits Keep/Discard.** The hook's
+   `sendMessage` returns `false`, the dock disables input with "Keep or discard
+   the AI text first", and the close button is disabled for the same span. The
+   alternative — auto-keeping on the next send — would make a decision the
+   writer never made.
+10. **`replace_selection` degrades to `cursor`** when, at write start, the
+    document no longer holds the send-time selection text at the recorded
+    positions.
+11. **Autosave suspension clears a timer already scheduled**, or the render
+    that saw the writer's opening transaction would still save a half-written
+    draft 1.5 s later.
+12. **A stopped run is marked stopped** in the panel (every active step ends
+    with "Stopped"), and unmounting the editor mid-write stops the request and
+    discards the range.
+
+Known and deliberately left: StarterKit's trailing-node rule appends an empty
+paragraph after a write that ends the document with a heading; the streaming
+caret renders at the block boundary rather than after the last word.
+
+13. **A selection rewrite replaces whole blocks** (browser pass, 2026-09-14).
+    The hook widens a non-empty selection to the top-level block(s) it touches
+    — positions and the text sent to the model — because the writer streams
+    whole blocks; a partial rewrite had cut the selected words out of the
+    sentence and appended the rewrite as a new paragraph.
+14. **The rewrite prompt is bounded to the passage.** Told only that its output
+    "replaces" a passage, the model kept writing and re-emitted the sections
+    that followed; the inner prompt now says the entire output replaces the
+    passage, at about the same length, and to stop.
+15. **The transport sends text parts only.** The SDK's history carried tool
+    and step parts back to the server, which the strict DTO rejected with a
+    400 on the second turn after a write; the client trims to text, which is
+    all the server reads.
+
+Known, pre-existing, not addressed here: the chat transport has no refresh
+on a 401, so an access token expiring mid-session fails the next message (the
+failure is now shown in the panel; the old hook carried the same TODO).
