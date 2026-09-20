@@ -110,7 +110,12 @@ desktop.
   attached sources."*; once messages exist, one muted line above the
   composer reads *"Drawing on 12 articles · 2 sources"* (numbers from the
   existing retrieval-debug query and the attached list; "no sources" when
-  none; the publish-first sentence when the corpus is empty, as today).
+  none; the publish-first sentence when the corpus is empty, as today). While
+  the corpus numbers are still loading, the empty state falls back to the
+  plain invitation with no numbers: *"Ask anything about your article, or
+  tell me what to write."* Switching tabs keeps the Chat tab mounted (just
+  hidden), so its scroll position and any in-flight recording survive the
+  switch; the Sources tab and the `📎 N` chip are disabled while recording.
 - **Sources tab.** Two groups. *Attached to this article*: title, page count,
   status chip when not ready, × to detach. *Your library*: every document
   with a checkbox for ready ones (attach/detach saves at once through the
@@ -118,7 +123,8 @@ desktop.
   ones (not toggleable). An **Upload** button runs the same presign → PUT →
   register flow as the library page, with the progress bar, so the writer
   never leaves the editor. *Manage in library →* links to
-  `/dashboard/documents` for retry and delete. The error lines added on
+  `/dashboard/documents` for retry and delete, opening in a new tab so the
+  conversation is never lost. The error lines added on
   2026-09-20 ("Couldn't load sources" + Retry; "Couldn't load your
   documents") render in the tab. The Sources strip is removed.
 - **Composer.** A `Textarea` that grows from one to four lines and then
@@ -149,7 +155,7 @@ All under `src/features/ai/` unless noted.
 | `ai-sources-tab.tsx` (new) | The Sources tab body; reuses `useArticleDocuments`, `useSetArticleDocuments`, `useDocuments`, `useUploadDocument`, `DocumentStatusChip`, `uploadDocument`. |
 | `ai-assistant-rail.tsx` (new) | The 48 px rail with its badge. |
 | `ai-corpus-line.ts` (new, pure) | `corpusLine({ articles, chunks, sources })` → the sentence / footer text; `node --test` checked. |
-| `ai-assistant-host.tsx` (renamed from `ai-assistant-dock.tsx`) | The container: breakpoint, persisted state, column + rail on `lg+`, Sheet + pill below. Keeps all today's wiring: `useAiAssistant`, `useSpeechOut`, `useVoiceInput`, the recording guards, `onWriteOpenChange`. |
+| `ai-assistant-host.tsx` (renamed from `ai-assistant-dock.tsx`) | The container: breakpoint, persisted state, column + rail on `lg+`, Sheet + pill below. Keeps all today's wiring: `useAiAssistant`, `useSpeechOut`, the recording guards, `onWriteOpenChange`. The recorder itself (`useVoiceInput`) does not live here — it's owned by `VoiceRecorderControl`, inside the panel's composer. |
 | `ai-sources-strip.tsx`, `ai-corpus-notice.tsx` | Deleted (their content moves to the Sources tab and `ai-corpus-line.ts`). |
 | `src/features/editor/editor-shell.tsx` | The page becomes the two-column flex; the toolbar button toggles the host state. |
 
@@ -162,9 +168,9 @@ Unchanged: every hook, `assistant-run.ts`, `ai-run-card.tsx`,
 | Case | Behaviour |
 |---|---|
 | Escape while recording | Refused with the existing tooltip, as the dock did |
-| Collapse while a write awaits Keep/Discard | Allowed; the bar stays in the editor; the Chat badge shows the pending state |
-| Article not yet saved (no id) | Sources tab shows "Save the article once to attach sources"; composer works as today |
-| Window resized across `lg` | The host switches container. The conversation, run state and recorder live in the host's hooks, which are never unmounted, so they persist; the panel itself may remount, which only resets scroll position and the active tab |
+| Collapse while a write awaits Keep/Discard | Allowed; the bar stays in the editor. In the rail, the Chat icon shows only the unread dot — the live badge (spinner / word count) ends as soon as the write finishes, so the rail can't show "pending" as a state; the editor's Keep/Discard bar is the pending indicator instead. Accepted deviation. |
+| Article not yet saved (no id) | Sources tab shows "Save the article once to attach sources"; composer works as today. In practice this is unreachable through the editor — the shell only mounts the panel once the article has an id — so the copy exists purely as a guard. |
+| Window resized across `lg` | The host switches container. The conversation, run state and speech live in the host's hooks, which are never unmounted, so they persist; the panel itself may remount, which only resets scroll position and the active tab. The recorder does not persist this way — it lives in the composer, which does unmount — so a resize across the 1024 px `lg` breakpoint mid-recording ends the dictation. Rare in practice; the writer's own × is the normal way out of a recording anyway. |
 | Sources tab open when a run starts | Chat tab badge spins; the writer switches back by hand — no auto-switch |
 | Upload from the tab fails | Same toasts as the library page |
 
