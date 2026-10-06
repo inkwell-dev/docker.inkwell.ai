@@ -1,0 +1,24 @@
+# Capture mode, second sitting — layered on top of docker-compose.capture.yml.
+#
+# The AI and document figures need the providers, and on the report's July clock
+# their TLS certificates are "not yet valid". So for this sitting the api and the
+# worker alone go back to the real clock: their HTTPS calls verify normally.
+#
+# Everything a screen shows keeps the July clock: the database (every `now()`,
+# every defaultNow column, the rollup windows the worker's cron queries), the web
+# app and the browser. A document uploaded now is stamped by Postgres and reads
+# "just now"; the analytics rollups keep their July window. The one exception is
+# a date the api writes from JavaScript — Portfolio Insights' generatedAt — which
+# `make capture-real` puts back on the database's clock before photographing it.
+#
+# FAKETIME is cleared as well as LD_PRELOAD: minio-real-clock.cjs keys off it, and
+# on the real clock there is no offset for it to undo.
+services:
+  api:
+    environment:
+      LD_PRELOAD: ""
+      FAKETIME: ""
+  worker:
+    environment:
+      LD_PRELOAD: ""
+      FAKETIME: ""
