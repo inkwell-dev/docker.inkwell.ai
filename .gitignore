@@ -5,3 +5,6 @@
 # but at a STABLE path so a resumed session can find them; the session
 # scratchpad cannot be found again after the session that made it dies.
 .tickets/
+
+# The clock offset make dciup-capture computes; local to one capture sitting.
+.capture-faketime

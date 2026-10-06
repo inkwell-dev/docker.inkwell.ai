@@ -1,0 +1,100 @@
+# Capture mode — the dev stack with its clock moved to the report's project window.
+#
+# The PFE report presents the project as running 2026-02-01 → 2026-07-31, so every
+# date a screenshot shows has to fall inside it. Dates in this product come from
+# two clocks — JavaScript's (the seed's `daysAgo`, token expiry, the web app's
+# formatting) and Postgres's `now()` (subscription expiry, rollup windows,
+# `defaultNow()` columns) — so moving only one of them makes the screenshots
+# disagree with themselves: a magazine whose subscription the seed started "20
+# days ago" would read as expired to a database that still thinks it is October.
+#
+# libfaketime moves both. Every service that reads the clock runs with it
+# preloaded and the same relative offset, so they agree with each other to the
+# second and the clock keeps ticking. The browser that takes the screenshots
+# runs with the same offset too (see `make capture`).
+#
+# Used only through the Makefile, which computes the offset:
+#   make dciup-capture CAPTURE_AT="2026-07-31 10:00:00"
+#   make capture
+#   make dciup-all          # back to the real clock
+#
+# One service is left on the real clock: MinIO, a static Go binary libfaketime
+# cannot reach. The api and the worker therefore sign their S3 requests with the
+# real time — .infra/capture/minio-real-clock.cjs — or MinIO would refuse them
+# as 67 days stale.
+#
+# FAKETIME_DONT_FAKE_MONOTONIC keeps the monotonic clock real: timers, timeouts
+# and Node's event loop are measured on it, and shifting it is what breaks them.
+
+x-faketime: &faketime
+  LD_PRELOAD: /usr/lib/faketime/libfaketime.so.1
+  FAKETIME: ${CAPTURE_FAKETIME:?run this through make dciup-capture, which sets the offset}
+  FAKETIME_DONT_FAKE_MONOTONIC: "1"
+  # Asks libfaketime not to share state between processes, which a relative
+  # offset does not need. Honoured by the Alpine build; Debian's ignores it,
+  # hence the db service's `user:` below.
+  FAKETIME_DISABLE_SHM: "1"
+
+services:
+  db:
+    image: inkwell-db:capture
+    build: !override
+      context: .
+      dockerfile_inline: |
+        FROM pgvector/pgvector:pg16
+        RUN apt-get update \
+         && apt-get install -y --no-install-recommends libfaketime \
+         && rm -rf /var/lib/apt/lists/* \
+         && ln -s "$$(dirname "$$(dpkg -L libfaketime | grep 'libfaketime.so.1$$')")" /usr/lib/faketime
+    # libfaketime creates a semaphore on first use. The stock entrypoint starts as
+    # root and then drops to postgres, so root would create it and the server
+    # would be refused it — and never come up. Starting as postgres throughout
+    # keeps one owner; the entrypoint supports this once the data directory is
+    # initialised, which it is for any stack that has run before.
+    user: postgres
+    environment: *faketime
+
+  api:
+    image: inkwell-api:capture
+    build: !override
+      context: .
+      dockerfile_inline: |
+        FROM inkwell-api:dev
+        USER root
+        RUN apk add --no-cache libfaketime
+        USER app
+    # MinIO keeps the real time (see .infra/capture/minio-real-clock.cjs), so the
+    # MinIO client in this process signs with the real time too.
+    volumes:
+      - ../capture:/capture:ro
+    environment:
+      <<: *faketime
+      NODE_OPTIONS: --require /capture/minio-real-clock.cjs
+
+  worker:
+    image: inkwell-api:capture
+    build: !override
+      context: .
+      dockerfile_inline: |
+        FROM inkwell-api:dev
+        USER root
+        RUN apk add --no-cache libfaketime
+        USER app
+    # MinIO keeps the real time (see .infra/capture/minio-real-clock.cjs), so the
+    # MinIO client in this process signs with the real time too.
+    volumes:
+      - ../capture:/capture:ro
+    environment:
+      <<: *faketime
+      NODE_OPTIONS: --require /capture/minio-real-clock.cjs
+
+  web:
+    image: inkwell-web:capture
+    build: !override
+      context: .
+      dockerfile_inline: |
+        FROM inkwell-web
+        USER root
+        RUN apk add --no-cache libfaketime
+        USER app
+    environment: *faketime

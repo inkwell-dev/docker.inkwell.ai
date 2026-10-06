@@ -17,7 +17,8 @@ DC_DEV_APPS = $(DC_DEV) --profile apps
         dci-dev-build dci-down dci-down-clean dci-logs-dev dci-ps \
         dciup-prod dci-prod-build dci-down-prod dci-down-prod-clean dci-logs-prod \
         dci-api-shell dci-web-shell dci-db-shell dci-reset dci-migrate dci-seed \
-        check-submodules git-spull dci-dev-rebuild check-hosts setup-hosts
+        check-submodules git-spull dci-dev-rebuild check-hosts setup-hosts \
+        dciup-capture capture-seed capture capture-real
 
 # Default target: `make` with no arguments prints this list.
 .DEFAULT_GOAL := help
@@ -40,6 +41,13 @@ help:
 	@echo "  make setup-hosts   Add the three dev hostnames to /etc/hosts (sudo)"
 	@echo ""
 	@echo "  make git-spull     Pull this repo + fast-forward both submodules"
+	@echo ""
+	@echo "Report screenshots — the stack on the report's clock (see .infra/compose/docker-compose.capture.yml):"
+	@echo "  make dciup-capture Stack up with its clock at CAPTURE_AT (default 2026-07-31 10:00:00)"
+	@echo "  make capture-seed  Fresh full seed + embeddings, on that clock (REPLACES the dev data)"
+	@echo "  make capture       Sitting 1: the figures that show dates, on that clock"
+	@echo "  make capture-real  Sitting 2: the AI and document figures (needs the embedding quota)"
+	@echo "  make dciup-all     Back to the real clock afterwards"
 	@echo ""
 	@echo "  http://frontend.inkwell.ai   app      (also http://localhost:8080)"
 	@echo "  http://backend.inkwell.ai    API + /api/docs"
@@ -222,6 +230,93 @@ dci-logs-dev:
 
 dci-ps:
 	$(DC_DEV_APPS) ps
+
+# ── Report capture ──────────────────────────────────────────────────────────
+# The screenshots must show dates inside the report's project window, so the
+# stack runs with its clock moved to CAPTURE_AT — see the header of
+# docker-compose.capture.yml for why every service, the database included, has
+# to move together.
+#
+# The offset is computed ONCE, by dciup-capture, and written to .capture-faketime.
+# capture-seed and capture read it back rather than recomputing it: an offset
+# recomputed minutes later would put the browser that many minutes behind the
+# server, and "just now" would read as "in 12 minutes".
+CAPTURE_AT ?= 2026-07-31 10:00:00
+# The project's first day: no seeded date — an account's "Joined", above all —
+# may fall before it.
+CAPTURE_NOT_BEFORE ?= 2026-02-01
+CAPTURE_OFFSET_FILE = .capture-faketime
+DC_CAPTURE = CAPTURE_FAKETIME="$$(cat $(CAPTURE_OFFSET_FILE))" docker compose $(COMPOSE_DEV) \
+             -f .infra/compose/docker-compose.capture.yml --profile apps
+
+dciup-capture: check-submodules
+	@echo "-$$(( $$(date +%s) - $$(date -d '$(CAPTURE_AT)' +%s) ))" > $(CAPTURE_OFFSET_FILE)
+	@echo "Clock offset $$(cat $(CAPTURE_OFFSET_FILE))s — the stack will read $(CAPTURE_AT)"
+	$(DC_CAPTURE) up -d --build
+
+# The seed's dates are relative to its own clock, so it runs inside the shifted
+# api container. --fresh wipes every row first, not only the previous seed's:
+# the dev database collects E2E debris ("E2E: Marketplace listing 426455"),
+# which a plain reseed keeps and which then appears in the feed figures.
+#
+# Only nadia-belhaj's articles are embedded: she is the writer the AI figures
+# open, and the provider's free tier cannot embed the whole corpus in a day.
+#
+# The embedding backfill is the exception: it calls Gemini over HTTPS, and on a
+# July clock Gemini's certificate is "not yet valid". It writes vectors, not any
+# date a screen shows, so it runs with libfaketime unloaded — on the real clock,
+# where certificate verification works as normal.
+capture-seed: check-submodules
+	@test -f $(CAPTURE_OFFSET_FILE) || { echo "run make dciup-capture first"; exit 1; }
+	$(DC_CAPTURE) exec api pnpm db:seed --preset=full --fresh --not-before=$(CAPTURE_NOT_BEFORE)
+	$(DC_CAPTURE) exec -e LD_PRELOAD= -e NODE_OPTIONS= api pnpm db:embed-backfill --author=nadia-belhaj
+
+# Playwright, in its own image, on the compose network. The whole superproject
+# is mounted because the capture writes into the frontend repo and the spec repo
+# sits beside it; node_modules is the web container's. DRAFT_ID is re-read from
+# the database, because every reseed gives the draft a new id.
+CAPTURE_DRAFT_ID = $$(docker exec inkwell-db-1 psql -U inkwell -d inkwell -tAc \
+  "select a.id from articles a join users u on u.id = a.author_id where u.username = 'nadia-belhaj' and a.status = 'draft' limit 1")
+CAPTURE_RUN = docker build -q -t inkwell-capture-browser -f .infra/dockerfiles/capture-browser.dockerfile .infra/dockerfiles >/dev/null && \
+  docker run --rm --network inkwell_inkwell --user $$(id -u):$$(id -g) --ipc=host \
+  -e HOME=/tmp -e CI=1 -e DRAFT_ID=$(CAPTURE_DRAFT_ID) \
+  -v "$$PWD":/w -v inkwell_web_node_modules:/w/src/frontend.inkwell.ai/node_modules:ro \
+  -w /w/src/frontend.inkwell.ai
+
+# Sitting 1: every figure that can show a date, on the report's clock. The
+# browser runs on the same offset as the stack.
+capture: check-submodules
+	@test -f $(CAPTURE_OFFSET_FILE) || { echo "run make dciup-capture first"; exit 1; }
+	$(CAPTURE_RUN) \
+	  -e LD_PRELOAD=/usr/lib/faketime/libfaketime.so.1 -e FAKETIME="$$(cat $(CAPTURE_OFFSET_FILE))" \
+	  -e FAKETIME_DONT_FAKE_MONOTONIC=1 -e FAKETIME_DISABLE_SHM=1 \
+	  inkwell-capture-browser node_modules/.bin/playwright test --config capture/playwright.capture.ts \
+	  --grep-invert @real-clock $(CAPTURE_ARGS)
+
+# Sitting 2: the AI and document figures, tagged @real-clock. The providers'
+# certificates postdate the report's clock, so the api and the worker run on the
+# real clock for this sitting (docker-compose.capture-ai.yml); the database, the
+# web app and the browser stay on the report's. Needs the embedding quota: the
+# full backfill of nadia-belhaj's articles runs first.
+#
+# Portfolio Insights stamp generatedAt from the api's (real) clock, so the
+# insights generated here are re-dated to the database's clock, and only then is
+# the evaluation page photographed — on the report's clock, like sitting 1.
+DC_CAPTURE_AI = $(DC_CAPTURE) -f .infra/compose/docker-compose.capture-ai.yml
+
+capture-real: check-submodules
+	@test -f $(CAPTURE_OFFSET_FILE) || { echo "run make dciup-capture first"; exit 1; }
+	$(DC_CAPTURE_AI) up -d api worker
+	$(DC_CAPTURE_AI) exec api pnpm db:embed-backfill --author=nadia-belhaj
+	$(CAPTURE_RUN) \
+	  -e LD_PRELOAD=/usr/lib/faketime/libfaketime.so.1 -e FAKETIME="$$(cat $(CAPTURE_OFFSET_FILE))" \
+	  -e FAKETIME_DONT_FAKE_MONOTONIC=1 -e FAKETIME_DISABLE_SHM=1 \
+	  inkwell-capture-browser node_modules/.bin/playwright test --config capture/playwright.capture.ts \
+	  --grep @real-clock $(CAPTURE_ARGS)
+	docker exec inkwell-db-1 psql -U inkwell -d inkwell -c \
+	  "update portfolio_insights set generated_at = now(), expires_at = now() + (expires_at - generated_at)"
+	$(DC_CAPTURE) up -d api worker
+	$(MAKE) capture CAPTURE_ARGS="--grep 'a writer evaluation'"
 
 # ── Prod ────────────────────────────────────────────────────────────────────
 dciup-prod:
