@@ -315,7 +315,16 @@ capture-real: check-submodules
 	  --grep @real-clock $(CAPTURE_ARGS)
 	docker exec inkwell-db-1 psql -U inkwell -d inkwell -c \
 	  "update portfolio_insights set generated_at = now(), expires_at = now() + (expires_at - generated_at)"
-	$(DC_CAPTURE) up -d api worker
+	@# Back to the report's clock. The real-clock worker left October-dated job
+	@# schedulers in Redis (a broker only — safe to clear; the worker recreates them
+	@# on boot) and recomputed the 30-day rollups for October, so both are reset.
+	P=$$(grep -E '^REDIS_PASSWORD=' .env | cut -d= -f2-); \
+	  docker exec inkwell-redis-1 redis-cli -a "$${P:-inkwell_redis}" --no-auth-warning FLUSHALL
+	$(DC_CAPTURE) up -d --force-recreate api worker
+	sleep 30
+	docker cp .infra/capture/reaggregate.mjs inkwell-worker-1:/app/reaggregate-once.mjs
+	docker exec -w /app inkwell-worker-1 node reaggregate-once.mjs; docker exec inkwell-worker-1 rm -f /app/reaggregate-once.mjs
+	sleep 15
 	$(MAKE) capture CAPTURE_ARGS="--grep 'a writer evaluation'"
 
 # ── Prod ────────────────────────────────────────────────────────────────────
