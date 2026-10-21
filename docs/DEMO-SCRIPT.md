@@ -1,231 +1,123 @@
-# Demo script — ten minutes
+# Demo script — a three-minute recording
 
-One article's journey, from a writer's draft to a magazine's masthead. That
-journey *is* the product's argument, and it is the only path that touches every
-subsystem: AI-assisted writing, hybrid search, the credit ledger, exclusivity,
-and publication.
+The defence plays a recorded video, not a live demo. It follows one writer,
+Nadia Belhaj, through both sides of the product: she writes with the assistant,
+then a magazine evaluates her and licenses one of her articles. The narration is
+given live during the defence, so the video carries no sound.
 
-Everything else is a detour. If you are short on time, cut §6 and §7 first —
-they are the least surprising parts.
+| Part | What it shows | Time |
+|---|---|---|
+| 1 · The writer | the assistant writes into the draft, grounded in her work; Keep | ~1m 15s |
+| 2 · The magazine | evaluation, portfolio insights, preview, purchase, exclusivity | ~1m 45s |
 
 ---
 
-## Before you start
+## Before you record
 
-Run these. Do not skip them; three of the four have bitten a run.
-
-```bash
-docker ps                       # seven containers, all Up
-make dci-migrate                # no-op if current, but proves the schema matches
-```
-
-**Check the demo magazine can still afford to buy something on camera.** It
-spends real credits and they do not come back:
+**1. The stack is up, and port 80 is free.** If the host's own nginx holds
+port 80, the inkwell nginx container starts without its ports; recreate it:
 
 ```bash
-docker exec inkwell-db-1 psql -U inkwell -d inkwell -t -A -F' | ' -c \
-"SELECT mp.credit_balance,
-        (SELECT count(*) FROM articles a
-          WHERE a.placement='marketplace' AND a.status='published'
-            AND a.deleted_at IS NULL
-            AND a.marketplace_price <= mp.credit_balance
-            AND NOT EXISTS (SELECT 1 FROM article_purchases p
-                             WHERE p.article_id=a.id AND p.stage='full_purchase'))
-   FROM magazine_profiles mp WHERE mp.slug='the-longform-review';"
+sudo systemctl stop nginx
+docker compose -f .infra/compose/docker-compose.dev.yml --env-file .env \
+  up -d --force-recreate --no-deps nginx
 ```
 
-If the balance is low or nothing is affordable, reseed — **with the preset, or
-you get a four-article corpus**:
+**2. Reset the data** (also between takes — every take spends real credits):
 
 ```bash
-make dci-seed SEED_ARGS="--preset=full"
+../demo-snapshots/reset.sh
 ```
 
-Reseeding regenerates identical row ids (they derive from a fixed seed), so any
-browser session you already have stays signed in.
+It restores `ready-to-record.dump`: The Longform Review at 1,738 credits,
+*Keeping One Fish* unsold, Nadia's draft untouched, her tokens at 20,000 and her
+style profile in place. That snapshot also has the seeded reading events moved
+forward to end on the recording day, so her audience card shows readers rather
+than 0 (the seed ends on 31 July, and the card counts the last 30 days).
+Close the editor tab before a reset and reload after: an open editor autosaves
+its old content over the restored draft.
 
-**Open two browser profiles before you start**, signed in and parked on the
-right pages. Switching accounts live costs thirty seconds of dead air each time,
-and the login form is not part of the story.
+**3. Two Chrome profiles, signed in and parked.**
 
 | Window | Account | Parked on |
 |---|---|---|
-| A | a writer — e.g. `chauncey-wiza@example.com` | their own profile |
-| B | the magazine — `the-longform-review` | `/marketplace` |
+| A | `nadia@example.com` | `/editor/9c984b16-a6b1-51db-93e9-f161b10cb29a` (*Against the Tackle Industry*), assistant panel open |
+| B | `editors@longformreview.example.com` | `/discover/writers/nadia-belhaj`, scrolled to the top |
 
-Passwords for every seeded account are in
-`.claude/skills/inkwell-ticket/references/environment.md`.
+Passwords: `.claude/skills/inkwell-ticket/references/environment.md`.
 
----
+**4. Clean the frame.**
 
-## 1 · The problem, in one screen — 45s
+- Close the red **"1 Issue"** badge (bottom left) with its ✕ in both windows.
+  It is a hydration warning caused by a browser extension writing
+  `bis_skin_checked` into the page, not an application error. Recording in a
+  profile without that extension removes it for good.
+- Disable **Grammarly** for the site: its icons sit inside the editor.
+- Full screen (F11), bookmarks bar hidden, browser zoom 100%, light theme.
+- Copy the assistant prompt of step 1.3 to the clipboard: pasting it reads
+  better on screen than typing it.
 
-Open the **home feed** signed out, in a private window.
-
-> "Independent writers publish into a void, and magazines commission by
-> reputation because they have no way to evaluate the work. Inkwell is a
-> marketplace between them, and everything you are about to see exists to make
-> one transaction trustworthy: a magazine licensing an article from a writer it
-> has never met."
-
-Do not linger. The feed is the least interesting screen in the product.
-
-## 2 · Writing, with the AI that knows your work — 2m
-
-Window A. Open the editor on an existing draft rather than a blank one — a blank
-editor demos nothing and costs you thirty seconds of typing.
-
-1. **Inline actions.** Select a paragraph → *reformulate* / *shorten* /
-   *expand*. Say what is happening underneath while it streams:
-
-   > "This is not a generic completion. Each request carries a retrieved slice
-   > of this writer's own published work, so the suggestion sounds like them and
-   > not like a model."
-
-2. **Chat.** Ask something that requires knowing their corpus — *"what have I
-   already argued about parking minimums?"* — and let it cite.
-
-3. **The quota.** Point at the token counter. One sentence:
-
-   > "Every account has a daily allowance, reset by a background job. The
-   > guard runs before the model call, not after, so an exhausted account costs
-   > nothing."
-
-**If a model call fails or hangs**, do not retry on camera. Say *"there is a
-liveness check that fails over between providers, and I will show the
-architecture for it in a moment"* and move on. §8 covers it properly.
-
-## 3 · Publishing, and the choice that matters — 1m
-
-Still window A. Publish, and stop on the placement dialog.
-
-> "Public, or marketplace. This is the fork the whole product turns on. Public
-> means readers. Marketplace means the article is not readable by anyone — it
-> is inventory, and only subscribing magazines can even see it exists."
-
-Show that the marketplace listing is **absent from the writer's own public
-profile** for a visitor, and present for the author. One sentence:
-
-> "A listing is a private commercial offer. Until somebody buys it, it is not
-> part of the writer's public shelf — and it carries no comments, no likes and
-> no reposts, because those are all forms of publication."
-
-## 4 · Evaluating a writer — 1m 30s
-
-Window B, the magazine. Go to **Find writers**, open the writer from §2.
-
-- The evaluation panel: unique readers, engagement, cadence, quality signals.
-- **Portfolio Insights** — the AI-generated report. Let it read for a beat.
-
-> "This is the decision-support layer, and it is the reason the analytics exist
-> at all. A magazine is about to spend real money on someone it has never
-> commissioned."
-
-Then the **Available to license** panel underneath.
-
-## 5 · The transaction — 2m · *the centrepiece*
-
-The only part you must not rush.
-
-1. **Preview** an article. Watch the credit balance drop by 10%.
-
-   > "Ten percent buys the right to read it. Not to publish it — to read it, so
-   > the decision is informed rather than blind."
-
-2. **Purchase** the remainder. Balance drops by the other 90%.
-
-   > "The writer is paid immediately, minus the platform fee, and every credit
-   > movement here is a double-entry ledger row. There is an invariant check
-   > that recomputes every balance from its transactions; it runs in the test
-   > suite and as a background job."
-
-3. **Show that it is now exclusive.** Go back to the marketplace browse — the
-   article is **gone**. Not greyed out. Gone.
-
-   > "One buyer. The listing leaves the market the moment it sells, so no second
-   > magazine can spend credits discovering it is already taken."
-
-## 6 · The library, and the act that publishes — 1m 30s
-
-**Your Library** → two tabs, **Unpublished** and **Published**.
-
-> "Buying does not publish. The article sits here until an editor decides it
-> runs — which is what a magazine actually does. Buying and publishing are
-> different decisions, so they are different actions."
-
-Hit **Publish**. Read the dialog aloud — it is doing real work:
-
-> "It becomes publicly readable by everyone including signed-out visitors, and
-> there is no un-publish."
-
-Confirm. The row moves tabs.
-
-## 7 · Where it lands — 1m
-
-Three surfaces, quickly, and the point lands on its own:
-
-1. **The magazine's public profile** — the article is on its shelf.
-2. **The writer's profile** — it is *back*, now reading *writer* **in**
-   *publication*.
-3. **The article itself, in a private window** — readable with no account.
-
-> "One column records who published it, and every surface that shows an article
-> shows the pairing. The writer keeps the credit; the magazine gets the
-> masthead."
-
-## 8 · What is underneath — 45s
-
-No clicking. One architecture slide, three claims:
-
-- **Hybrid retrieval.** Postgres full-text and pgvector, fused with reciprocal
-  rank fusion — lexical alone misses paraphrase, vector alone misses names.
-- **Model liveness.** Providers are probed on a schedule and requests fail over,
-  so a dead provider degrades rather than breaks.
-- **The ledger.** Balances are never the source of truth; transactions are, and
-  an invariant asserts the two agree.
-
-## 9 · Close — 30s
-
-> "Four rules make the marketplace trustworthy: a listing is private until it
-> sells, one buyer only, publication is a deliberate act, and the credit is
-> shared. Each one was a separate change, and each shipped with the tests that
-> prove it."
+**5. Record** at 1920×1080, 30 fps (OBS: *Display capture*). The deck accepts a
+video of 20 MB at most; record at normal quality and compress afterwards.
 
 ---
 
-## If something breaks
+## 1 · The writer — ~1m 15s (window A)
 
-**Have a fallback for each beat.** The demo is a live system.
+1. **Hold on the editor** for 3 seconds: the draft, and the assistant panel
+   reading *"I draw on your 5 published articles"*.
+2. **Finish the broken sentence by hand.** Click at the very end of the
+   paragraph that stops at *"… refusing to go out unless four"* and type
+   ` conditions line up at once.`
+   This also puts the cursor where the assistant will write: a write is
+   inserted after the paragraph holding the cursor. With the cursor anywhere
+   else, the paragraph lands in the wrong place.
+3. **Ask the assistant** — paste, then Enter:
+
+   > Write a short closing paragraph that ties this back to the fish being closer than I think.
+
+4. **Let the steps run** (~10 s): words read, *style profile loaded*, passages
+   from her articles, words written. Do not move the mouse.
+5. **The paragraph appears highlighted** below the one you finished, with
+   **Keep** and **Discard**. Hold 2 seconds, then click **Keep**.
+6. Hold 2 seconds on the result. Cut to window B.
+
+## 2 · The magazine — ~1m 45s (window B)
+
+1. **The evaluation page**, top: *Marketplace eligible*, then Audience, Quality
+   and Content. Scroll slowly; about 10 seconds.
+2. **Portfolio insights → Generate insights.** It answers in under 10 seconds.
+   Scroll through Voice, Subject expertise, Voice consistency and Commission
+   ideas; about 15 seconds.
+3. **Available to license → *Keeping One Fish* → Preview · 7.** The dialog
+   shows *7 credits, balance 1738 → 1731*. Hold 2 seconds, **Confirm**.
+4. The card now reads **PREVIEWED** and its button **Buy · 69**. Optional,
+   15 seconds: click the title to show the article is now readable, then
+   go back.
+5. **Buy · 69.** The dialog is the two-stage purchase in one view: *price 76,
+   already paid at preview −7, you pay now 69, balance 1731 → 1662*. Hold
+   3 seconds, **Confirm**.
+6. **The card disappears** from *Available to license*: one buyer only. The top
+   bar reads 1,662. Hold 3 seconds. End of the recording.
+
+---
+
+## If a take goes wrong
 
 | If | Do |
 |---|---|
-| A model call hangs | Do not retry. Move to §3; cover the AI in §8 instead |
-| `/library` bounces you to the login page | Load any other page first, then return — the access token refreshes on the next API call and the proxy cookie comes back with it. This is a known split between the token in storage and the cookie the proxy reads |
-| A purchase is refused | Check the balance. Credits are spent for real and do not reset |
-| The magazine profile looks empty | You are on a magazine that has published nothing. Use `the-longform-review` |
+| The write lands after the wrong paragraph | Discard, click at the end of the right paragraph, ask again |
+| The steps say *no profile yet* | The snapshot was not restored; run `reset.sh` |
+| The audience card shows 0 readers | Same: the reset was skipped, or the snapshot is older than this file |
+| A model call hangs | Stop, run `reset.sh`, take again |
+| Anything else | `reset.sh` and start the take over: it takes under a minute |
 
-**Reseeding mid-demo is a last resort** — it takes minutes and rewrites the
-corpus. Prefer moving on.
+## After recording
+
+Send the file over for compression under 20 MB and a still frame; both are
+uploaded to slide 25 of the deck.
 
 ---
-
-## Do not click these
-
-Not defects to hide — things with nothing behind them yet, which will cost you
-credibility if an examiner sees them and asks.
-
-- **The `Writers` tab** on a magazine profile. Placeholder names; there is no
-  contributor endpoint.
-- **Anything about *when* a magazine published something.** Nothing records it —
-  a licensed article sorts by the writer's original date, so an old essay
-  licensed today appears far down the magazine's shelf. If asked: it needs a
-  column that was deliberately not added, and the honest reason is that the
-  alternative decays.
-- **Token top-up.** Not implemented, deliberately — the daily allowance job
-  would erase topped-up tokens at midnight. Magazine *credit* top-up is a
-  different thing and does work.
-- **Admin article management.** Removed from scope; moderation acts through the
-  reports queue.
 
 ## Questions you should expect
 
