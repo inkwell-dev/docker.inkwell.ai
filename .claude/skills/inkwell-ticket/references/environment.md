@@ -65,6 +65,17 @@ touching it fails on a missing relation. This reads as a broken harness rather
 than a missing table, and it has cost a long debugging detour twice — once on
 `blocks` (3 suites / 17 tests red), once on `saves`.
 
+**`npm run build` takes the running API down.** `nest-cli.json` sets
+`deleteOutDir: true`, so the build deletes `dist/` while the `nest start --watch`
+dev server is running from it. The API then dies with
+`Cannot find module '/app/dist/main'`, and `touch` does not bring it back; only a
+real source change, or a container restart, does. To check the build compiles
+without that, compile to a throwaway directory instead (added 2026-10-22):
+
+```bash
+docker exec -w /app inkwell-api-1 sh -c 'npx tsc -p tsconfig.build.json --outDir /tmp/buildcheck && rm -rf /tmp/buildcheck'; echo "exit: $?"
+```
+
 **`tsc --noEmit` is the only gate covering `test/`.** Jest compiles via SWC
 without typechecking, and `build` excludes `test/`. A type error in a spec file
 is invisible to every other gate.

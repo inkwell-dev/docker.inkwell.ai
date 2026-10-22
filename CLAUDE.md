@@ -27,7 +27,7 @@ Everything else is driven by the `Makefile`. Run `make` with no arguments.
 | bring a brand-new session up to speed, or set up another machine | **`spec.inkwell.ai/START-HERE.md`** |
 | the PFE report — chapters, figures, screenshots | **`spec.inkwell.ai/REPORT-CONTEXT.md`** |
 | repo map, branches, commits, PRs, code style | `.claude/skills/inkwell-ticket/references/conventions.md` |
-| how the system is built | `docs/ARCHITECTURE.md`, `docs/RAG.md`, and `spec.inkwell.ai/4-system-architecture.md` |
+| how the system is built | `docs/ARCHITECTURE.md`, `docs/RAG.md`, `docs/AI-WRITING.md`, and `spec.inkwell.ai/4-system-architecture.md` |
 
 The skill is the authority on process and environment. Prefer it over any note,
 memory or summary that disagrees with it — it is versioned with the code.

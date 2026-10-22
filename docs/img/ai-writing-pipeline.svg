@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1500" width="1080" height="1500" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>How the editor assistant turns a request into an edit</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .lane-title { font-size: 15px; font-weight: 700; letter-spacing: .08em; }
+      .step-no { font-size: 15px; font-weight: 800; fill: #fff; }
+      .h { font-size: 17px; font-weight: 700; fill: #0f172a; }
+      .t { font-size: 13.5px; fill: #334155; }
+      .m { font-size: 12.5px; fill: #475569; font-family: 'JetBrains Mono', Menlo, Consolas, monospace; }
+      .note { font-size: 12.5px; fill: #64748b; font-style: italic; }
+      .flow { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <!-- background -->
+  <rect width="1080" height="1500" fill="#ffffff"/>
+
+  <!-- header -->
+  <text x="40" y="52" font-size="26" font-weight="800" fill="#0f172a">From “add Tunisia” to an edit in the right place</text>
+  <text x="40" y="80" class="t">One chat message, two model calls, and two checks on where the text may land. Blue runs in the browser, violet on the API.</text>
+
+  <!-- lane bands -->
+  <rect x="24" y="104" width="1032" height="250" rx="16" fill="#eff6ff"/>
+  <text x="44" y="132" class="lane-title" fill="#1d4ed8">BROWSER · SEND</text>
+  <rect x="24" y="372" width="1032" height="712" rx="16" fill="#f5f3ff"/>
+  <text x="44" y="400" class="lane-title" fill="#6d28d9">API · /ai/chat</text>
+  <rect x="24" y="1102" width="1032" height="366" rx="16" fill="#eff6ff"/>
+  <text x="44" y="1130" class="lane-title" fill="#1d4ed8">BROWSER · WRITE</text>
+
+  <!-- ============ 1. Snapshot ============ -->
+  <g transform="translate(44,148)">
+    <rect width="600" height="186" rx="12" fill="#fff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <circle cx="26" cy="28" r="15" fill="#2563eb"/><text x="26" y="33" text-anchor="middle" class="step-no">1</text>
+    <text x="52" y="34" class="h">Snapshot the live document</text>
+    <text x="22" y="62" class="t">Every top-level block of the editor, as it is on screen —</text>
+    <text x="22" y="81" class="t">unsaved typing included. Empty lines are skipped.</text>
+    <text x="22" y="108" class="m">[1] ## Italy</text><text x="190" y="108" class="m">[2] Italian cooking…</text>
+    <text x="22" y="127" class="m">[3] ## Japan</text><text x="190" y="127" class="m">[4] Japanese food…</text>
+    <text x="22" y="146" class="m">[5] ## Mexico</text><text x="190" y="146" class="m">[6] Mexican cuisine…</text>
+    <text x="22" y="172" class="note">Block number = position in this list. Nothing else is sent to identify it.</text>
+  </g>
+  <g transform="translate(664,148)">
+    <rect width="372" height="186" rx="12" fill="#fff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <text x="20" y="34" class="h">The request carries</text>
+    <text x="20" y="62" class="m">messages</text>
+    <text x="20" y="84" class="m">document.blocks  ≤ 500</text>
+    <text x="38" y="102" class="t">{ type, level?, text ≤ 4000, clipped? }</text>
+    <text x="20" y="124" class="m">document.cursorBlock</text>
+    <text x="20" y="146" class="m">selection.text</text>
+    <text x="20" y="172" class="note">≤ 40,000 chars in all · body limit 512 KB</text>
+  </g>
+
+  <path class="flow" d="M540,336 L540,410"/>
+
+  <!-- ============ 2. Gate + window ============ -->
+  <g transform="translate(44,416)">
+    <rect width="992" height="150" rx="12" fill="#fff" stroke="#ddd6fe" stroke-width="1.5"/>
+    <circle cx="26" cy="28" r="15" fill="#7c3aed"/><text x="26" y="33" text-anchor="middle" class="step-no">2</text>
+    <text x="52" y="34" class="h">Check ownership, then decide what the model may see</text>
+    <text x="22" y="64" class="t">The live document is used only for an article this writer owns and has not deleted; otherwise the saved copy.</text>
+    <text x="22" y="88" class="t">Full text fits a 6,000-character window around the cursor (or the end). Headings outside it stay as an outline;</text>
+    <text x="22" y="108" class="t">other blocks fold into <tspan class="m">[7–19] (13 blocks not shown)</tspan>.</text>
+    <rect x="22" y="120" width="948" height="22" rx="6" fill="#f5f3ff"/>
+    <text x="34" y="136" class="t" font-weight="600" fill="#5b21b6">Only blocks shown in full are replaceable — the same call that renders the prompt produces that list.</text>
+  </g>
+
+  <path class="flow" d="M540,568 L540,600"/>
+
+  <!-- ============ 3. Router ============ -->
+  <g transform="translate(44,606)">
+    <rect width="600" height="206" rx="12" fill="#fff" stroke="#ddd6fe" stroke-width="1.5"/>
+    <circle cx="26" cy="28" r="15" fill="#7c3aed"/><text x="26" y="33" text-anchor="middle" class="step-no">3</text>
+    <text x="52" y="34" class="h">Router call — answer, or write?</text>
+    <text x="22" y="62" class="t">Sees the numbered article, the selection, the style profile.</text>
+    <text x="22" y="86" class="t"><tspan font-weight="700">Add</tspan> material → <tspan class="m">after_block N</tspan> (last block of the section)</text>
+    <text x="22" y="108" class="t"><tspan font-weight="700">Change</tspan> named text → <tspan class="m">replace_blocks N..M</tspan></text>
+    <text x="22" y="130" class="t"><tspan font-weight="700">“this”</tspan> with a selection → <tspan class="m">replace_selection</tspan></text>
+    <text x="22" y="152" class="t"><tspan font-weight="700">“here”</tspan> or an empty article → <tspan class="m">cursor</tspan></text>
+    <text x="22" y="180" class="m">write_to_article { placement, block?, fromBlock?, toBlock?, brief }</text>
+  </g>
+  <g transform="translate(664,606)">
+    <rect width="372" height="206" rx="12" fill="#fff" stroke="#ddd6fe" stroke-width="1.5"/>
+    <text x="20" y="34" class="h">Why the schema is lenient</text>
+    <text x="20" y="60" class="t">The provider checks every tool call</text>
+    <text x="20" y="79" class="t">against the schema and rejects the turn</text>
+    <text x="20" y="98" class="t">on a mismatch. So block numbers are</text>
+    <text x="20" y="117" class="m">integer | null</text>
+    <text x="20" y="139" class="t">and extra keys are allowed. Our own</text>
+    <text x="20" y="158" class="t">resolver decides what is usable.</text>
+    <text x="20" y="186" class="note">gpt-oss-120b → gpt-oss-20b → Gemini</text>
+  </g>
+
+  <path class="flow" d="M540,814 L540,846"/>
+
+  <!-- ============ 4. Resolver ============ -->
+  <g transform="translate(44,852)">
+    <rect width="992" height="212" rx="12" fill="#fff" stroke="#ddd6fe" stroke-width="1.5"/>
+    <circle cx="26" cy="28" r="15" fill="#7c3aed"/><text x="26" y="33" text-anchor="middle" class="step-no">4</text>
+    <text x="52" y="34" class="h">Resolve the target — degrade, never fail</text>
+    <!-- four rule tiles -->
+    <g transform="translate(22,52)">
+      <rect width="226" height="100" rx="10" fill="#faf5ff" stroke="#e9d5ff"/>
+      <text x="14" y="26" class="t" font-weight="700">One write per turn</text>
+      <text x="14" y="48" class="t">A second call is refused</text>
+      <text x="14" y="66" class="t">and streams nothing.</text>
+    </g>
+    <g transform="translate(262,52)">
+      <rect width="226" height="100" rx="10" fill="#faf5ff" stroke="#e9d5ff"/>
+      <text x="14" y="26" class="t" font-weight="700">Never replace the unseen</text>
+      <text x="14" y="48" class="t">A range with a hidden block</text>
+      <text x="14" y="66" class="t">becomes “insert after it”.</text>
+    </g>
+    <g transform="translate(502,52)">
+      <rect width="226" height="100" rx="10" fill="#faf5ff" stroke="#e9d5ff"/>
+      <text x="14" y="26" class="t" font-weight="700">Section snap</text>
+      <text x="14" y="48" class="t">“After ## Mexico” moves to</text>
+      <text x="14" y="66" class="t">the end of Mexico's section.</text>
+      <text x="14" y="84" class="t">A title snaps past its intro.</text>
+    </g>
+    <g transform="translate(742,52)">
+      <rect width="226" height="100" rx="10" fill="#faf5ff" stroke="#e9d5ff"/>
+      <text x="14" y="26" class="t" font-weight="700">Out of range</text>
+      <text x="14" y="48" class="t">No document, no selection,</text>
+      <text x="14" y="66" class="t">a bad number → the cursor.</text>
+    </g>
+    <text x="22" y="180" class="m">data-article-start { id, brief, placement, block | fromBlock + toBlock }</text>
+    <text x="22" y="200" class="note">Numbers only — no positions and no text go back. The browser still has its snapshot.</text>
+  </g>
+
+  <!-- writer call side note -->
+  <path class="flow" d="M540,1066 L540,1146"/>
+  <g transform="translate(560,1062)">
+    <rect width="476" height="34" rx="8" fill="#ede9fe"/>
+    <text x="14" y="22" class="t" fill="#4c1d95"><tspan font-weight="700">Writer call</tspan> streams Markdown: only the new text, or only the replacement.</text>
+  </g>
+
+  <!-- ============ 5. Verify ============ -->
+  <g transform="translate(44,1150)">
+    <rect width="600" height="298" rx="12" fill="#fff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <circle cx="26" cy="28" r="15" fill="#2563eb"/><text x="26" y="33" text-anchor="middle" class="step-no">5</text>
+    <text x="52" y="34" class="h">Find the target again, in today's document</text>
+    <text x="22" y="62" class="t">The writer may have typed while the model was thinking.</text>
+    <g transform="translate(22,78)">
+      <rect width="556" height="44" rx="8" fill="#ecfdf5" stroke="#a7f3d0"/>
+      <text x="14" y="19" class="t" font-weight="700" fill="#065f46">Same place, same text</text>
+      <text x="14" y="36" class="t" fill="#065f46">→ replace it, or insert right after it.</text>
+    </g>
+    <g transform="translate(22,130)">
+      <rect width="556" height="44" rx="8" fill="#ecfdf5" stroke="#a7f3d0"/>
+      <text x="14" y="19" class="t" font-weight="700" fill="#065f46">Moved, found exactly once (and unique when sent)</text>
+      <text x="14" y="36" class="t" fill="#065f46">→ follow it there.</text>
+    </g>
+    <g transform="translate(22,182)">
+      <rect width="556" height="60" rx="8" fill="#fffbeb" stroke="#fde68a"/>
+      <text x="14" y="19" class="t" font-weight="700" fill="#92400e">Edited, deleted or ambiguous</text>
+      <text x="14" y="36" class="t" fill="#92400e">→ nothing is replaced. The text goes beside where it was,</text>
+      <text x="14" y="53" class="t" fill="#92400e">and a notice in the run card plus a toast says so.</text>
+    </g>
+    <text x="22" y="272" class="note">Never a silent fallback to “wherever the cursor is”.</text>
+  </g>
+
+  <!-- ============ 6. Range ============ -->
+  <g transform="translate(664,1150)">
+    <rect width="372" height="298" rx="12" fill="#fff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <circle cx="26" cy="28" r="15" fill="#2563eb"/><text x="26" y="33" text-anchor="middle" class="step-no">6</text>
+    <text x="52" y="34" class="h">Keep or Discard</text>
+    <text x="20" y="62" class="t">The text streams into a protected,</text>
+    <text x="20" y="81" class="t">tinted range. Autosave waits.</text>
+    <text x="20" y="110" class="t"><tspan font-weight="700">Keep</tspan> — one Ctrl+Z undoes it.</text>
+    <text x="20" y="132" class="t"><tspan font-weight="700">Discard</tspan> — the document comes back</text>
+    <text x="20" y="151" class="t">byte for byte, images included.</text>
+    <rect x="20" y="170" width="332" height="96" rx="8" fill="#eff6ff"/>
+    <text x="34" y="192" class="t" font-weight="700">Leaving with it undecided?</text>
+    <text x="34" y="212" class="t">A link asks: Stay · Discard and leave</text>
+    <text x="34" y="231" class="t">· Keep and leave (saves first).</text>
+    <text x="34" y="252" class="t">Back/Forward discards, with a toast.</text>
+    <text x="20" y="286" class="note">Publish is off while a write is open.</text>
+  </g>
+</svg>
